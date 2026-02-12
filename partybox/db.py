@@ -205,3 +205,17 @@ def clear_queue() -> None:
     con.execute("DELETE FROM queue WHERE status IN ('queued','playing')")
     con.commit()
     con.close()
+
+def pick_idle() -> Optional[sqlite3.Row]:
+    con = connect()
+    rows = con.execute(
+        "SELECT id, title, youtube_id FROM catalog WHERE enabled=1 ORDER BY title COLLATE NOCASE"
+    ).fetchall()
+    con.close()
+    if not rows:
+        return None
+
+    import time
+    idx = int(time.time() // 90) % len(rows)  # rotate every 90s
+    return rows[idx]
+

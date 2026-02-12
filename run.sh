@@ -1,6 +1,13 @@
-mkdir -p partybox templates static data
-touch partybox/__init__.py partybox/app.py partybox/db.py
-touch templates/tv.html templates/user.html templates/admin.html templates/base.html
-touch static/app.js static/style.css
-touch run.sh
+#!/usr/bin/env bash
+set -euo pipefail
 
+cd "$(dirname "$0")"
+
+# Activate venv
+source .venv/bin/activate
+
+# DB location
+export PARTYBOX_DB="${PARTYBOX_DB:-$(pwd)/data/partybox.db}"
+
+# Run the app (binds to 0.0.0.0:5000 inside app.py)
+python -m partybox.app

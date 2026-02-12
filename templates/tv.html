@@ -4,21 +4,22 @@
   <div id="playerWrap" class="playerWrap">
     <div id="player"></div>
   </div>
-
   <div id="toast" class="toast hidden"></div>
 </div>
 
-<!-- YouTube IFrame API -->
 <script src="https://www.youtube.com/iframe_api"></script>
 {% endblock %}
 
 {% block scripts %}
 <script>
-  // Simple polling TV loop. No websockets for POC.
   let ytPlayer = null;
+
   let currentQueueId = null;
   let currentVideoId = null;
-  let suppressNextUntil = 0;
+  let suppressUntil = 0;
+
+  // Next candidate from server (/api/state)
+  window.__next = null;
 
   function showToast(msg) {
     const el = document.getElementById('toast');
@@ -36,22 +37,34 @@
   }
 
   function pollState() {
-    if (Date.now() < suppressNextUntil) return;
-    fetch('/api/state').then(r => r.json()).then(st => {
-      if (!st.next) return;
-      const nxt = st.next;
-      if (currentQueueId === nxt.queue_id) return;
+    if (Date.now() < suppressUntil) return;
 
-      // If we're already playing something, only switch when it ends.
-      // So we just preload knowledge; actual play happens on end handler.
-      window.__next = nxt;
-      showToast("Next selected: " + nxt.title);
-    }).catch(() => {});
+    fetch('/api/state')
+      .then(r => r.json())
+      .then(st => {
+        if (!st.next) return;
+
+        const nxt = st.next;
+
+        // If we're already playing this exact video, do nothing
+        if (currentVideoId === nxt.youtube_id) return;
+
+        // Always keep a candidate next (queue or idle)
+        window.__next = { ...nxt, mode: st.mode || "queue" };
+
+        if ((st.mode || "queue") === "queue") {
+          showToast("Next selected: " + nxt.title);
+        }
+      })
+      .catch(() => {});
   }
 
   function playVideoId(videoId) {
     currentVideoId = videoId;
     if (!ytPlayer) return;
+
+    // Autoplay is most reliable when muted.
+    ytPlayer.mute();
     ytPlayer.loadVideoById(videoId);
   }
 
@@ -59,20 +72,33 @@
     const nxt = window.__next || null;
     if (!nxt) return;
 
-    currentQueueId = nxt.queue_id;
-
-    api('/api/tv/mark_playing', {queue_id: currentQueueId}).then(() => {});
-    playVideoId(nxt.youtube_id);
-
-    if (nxt.note_text) {
-      showToast(nxt.note_text);
+    // Queue item vs idle item
+    if (nxt.queue_id) {
+      currentQueueId = nxt.queue_id;
+      api('/api/tv/mark_playing', {queue_id: currentQueueId}).then(() => {});
+      if (nxt.note_text) showToast(nxt.note_text);
+    } else {
+      currentQueueId = null;
     }
 
-    // Clear next
+    playVideoId(nxt.youtube_id);
     window.__next = null;
   }
 
-  // YouTube callback
+  function finishAndAdvance(reason) {
+    if (reason) showToast(reason);
+
+    // Mark done if it was a queued item
+    if (currentQueueId) {
+      api('/api/tv/mark_done', {queue_id: currentQueueId}).then(() => {});
+      currentQueueId = null;
+    }
+
+    suppressUntil = Date.now() + 800;
+    // Immediately try another
+    startNextIfAvailable();
+  }
+
   function onYouTubeIframeAPIReady() {
     ytPlayer = new YT.Player('player', {
       width: '100%',
@@ -82,31 +108,43 @@
         autoplay: 1,
         controls: 0,
         rel: 0,
-        modestbranding: 1
+        modestbranding: 1,
+        playsinline: 1
       },
       events: {
         onReady: () => {
-          // Nothing playing initially; we’ll start when a pick arrives.
+          // Poll for next/idle
           setInterval(pollState, 2000);
+
+          // If nothing is playing, start something (idle or queued)
           setInterval(() => {
-            // If we're not playing anything, start immediately
-            const state = ytPlayer.getPlayerState();
-            if (state !== YT.PlayerState.PLAYING && state !== YT.PlayerState.BUFFERING) {
-              startNextIfAvailable();
-            }
+            try {
+              const state = ytPlayer.getPlayerState();
+              if (state !== YT.PlayerState.PLAYING && state !== YT.PlayerState.BUFFERING) {
+                startNextIfAvailable();
+              }
+            } catch (e) {}
           }, 1500);
         },
+
         onStateChange: (e) => {
-          if (e.data === YT.PlayerState.ENDED) {
-            // Mark done
-            if (currentQueueId) {
-              api('/api/tv/mark_done', {queue_id: currentQueueId}).then(() => {});
-              currentQueueId = null;
-              suppressNextUntil = Date.now() + 800; // small debounce
-            }
-            // Immediately try next
-            startNextIfAvailable();
+          if (e.data === YT.PlayerState.PLAYING) {
+            // Try to unmute after playback starts (may be blocked by browser policy)
+            try { ytPlayer.unMute(); } catch (err) {}
           }
+
+          if (e.data === YT.PlayerState.ENDED) {
+            finishAndAdvance(null);
+          }
+        },
+
+        onError: (err) => {
+          const code = (err && err.data) ? err.data : null;
+          // 101/150 are commonly "embed disabled"
+          const msg = (code === 101 || code === 150)
+            ? "Video blocked (embed). Skipping…"
+            : "Playback error. Skipping…";
+          finishAndAdvance(msg);
         }
       }
     });

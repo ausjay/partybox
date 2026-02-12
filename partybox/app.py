@@ -44,22 +44,41 @@ def create_app() -> Flask:
     # ---------- APIs ----------
     @app.get("/api/state")
     def api_state():
-        # TV polls this every 2s to know what to play next
         locked = DB.get_setting("requests_locked", "0") == "1"
+
         nxt = DB.peek_next()
-        if not nxt:
-            return jsonify({"locked": locked, "next": None})
-        return jsonify(
-            {
-                "locked": locked,
-                "next": {
-                    "queue_id": int(nxt["id"]),
-                    "title": nxt["title"],
-                    "youtube_id": nxt["youtube_id"],
-                    "note_text": nxt["note_text"] or "",
-                },
-            }
-        )
+        if nxt:
+            return jsonify(
+                {
+                    "locked": locked,
+                    "mode": "queue",
+                    "next": {
+                        "queue_id": int(nxt["id"]),
+                        "title": nxt["title"],
+                        "youtube_id": nxt["youtube_id"],
+                        "note_text": nxt["note_text"] or "",
+                    },
+                }
+            )
+
+        idle = DB.pick_idle()
+        if idle:
+            return jsonify(
+                {
+                    "locked": locked,
+                    "mode": "idle",
+                    "next": {
+                        "queue_id": None,
+                        "title": idle["title"],
+                        "youtube_id": idle["youtube_id"],
+                        "note_text": "",
+                    },
+                }
+            )
+
+        return jsonify({"locked": locked, "mode": "empty", "next": None})
+
+
 
     @app.post("/api/tv/mark_playing")
     def api_mark_playing():
@@ -102,14 +121,70 @@ def create_app() -> Flask:
             return jsonify({"ok": False, "error": "forbidden"}), 403
 
         data = request.get_json(force=True, silent=True) or {}
-        title = (data.get("title") or "").strip()
-        youtube_id = (data.get("youtube_id") or "").strip()
+        raw = (data.get("youtube") or data.get("youtube_id") or "").strip()
 
-        if not title or not youtube_id or not YOUTUBE_ID_RE.match(youtube_id):
-            return jsonify({"ok": False, "error": "bad title or youtube_id"}), 400
+        if not raw:
+            return jsonify({"ok": False, "error": "missing youtube url or id"}), 400
+
+        # Accept either a bare YouTube ID or a full URL.
+        youtube_id = raw
+
+        if "youtube.com" in raw or "youtu.be" in raw:
+            import re
+            m = re.search(r"youtu\.be/([A-Za-z0-9_-]{6,})", raw)
+            if not m:
+                m = re.search(r"[?&]v=([A-Za-z0-9_-]{6,})", raw)
+            if not m:
+                m = re.search(r"youtube\.com/shorts/([A-Za-z0-9_-]{6,})", raw)
+            if m:
+                youtube_id = m.group(1)
+
+        if not youtube_id or not YOUTUBE_ID_RE.match(youtube_id):
+            return jsonify({"ok": False, "error": "bad youtube id"}), 400
+
+        # Auto-fetch title via oEmbed (no API key)
+        title = (data.get("title") or "").strip()
+        if not title:
+            try:
+                import urllib.parse
+                import urllib.request
+                import json as _json
+
+                watch_url = f"https://www.youtube.com/watch?v={youtube_id}"
+                oembed = "https://www.youtube.com/oembed?format=json&url=" + urllib.parse.quote(watch_url, safe="")
+                with urllib.request.urlopen(oembed, timeout=6) as resp:
+                    payload = _json.loads(resp.read().decode("utf-8", "replace"))
+                    title = (payload.get("title") or "").strip()
+            except Exception:
+                title = ""
+
+        if not title:
+            title = f"YouTube {youtube_id}"
+
+        # Probe embed viability (best-effort)
+        # If blocked, YouTube often serves a page containing "Video unavailable" or "errorScreen"
+        try:
+            import urllib.request
+
+            embed_url = f"https://www.youtube.com/embed/{youtube_id}"
+            req = urllib.request.Request(
+                embed_url,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (X11; Linux) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari"
+                },
+            )
+            with urllib.request.urlopen(req, timeout=6) as resp:
+                html = resp.read(50000).decode("utf-8", "replace")
+                low = html.lower()
+                if "video unavailable" in low or "errorscreen" in low:
+                    return jsonify({"ok": False, "error": "embed_blocked"}), 400
+        except Exception:
+            # If probe fails due to network, still allow add
+            pass
 
         DB.add_catalog_item(title, youtube_id)
-        return jsonify({"ok": True})
+        return jsonify({"ok": True, "title": title, "youtube_id": youtube_id})
+
 
     @app.post("/api/admin/catalog_enable")
     def api_catalog_enable():

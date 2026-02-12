@@ -11,7 +11,7 @@
   <h2>Catalog</h2>
   <div class="row">
     <input id="title" placeholder="Title" />
-    <input id="youtube_id" placeholder="YouTube ID (e.g. dQw4w9WgXcQ)" />
+  <input id="youtube_id" placeholder="Paste YouTube URL (or ID)" />
     <button class="btn" onclick="addItem()">Add</button>
   </div>
 
@@ -49,13 +49,14 @@
   function setStatus(t) { document.getElementById('status').textContent = t; }
 
   function addItem() {
-    const title = document.getElementById('title').value.trim();
+    const title = document.getElementById('title').value.trim(); // optional now
     const youtube_id = document.getElementById('youtube_id').value.trim();
     post('/api/admin/catalog_add', {title, youtube_id}).then(j => {
       if (j.ok) location.reload();
       else setStatus('Error: ' + (j.error || 'unknown'));
     });
   }
+
 
   function setEnabled(id, enabled) {
     post('/api/admin/catalog_enable', {id, enabled: !!enabled}).then(j => {
