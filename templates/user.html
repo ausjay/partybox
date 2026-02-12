@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="page">
+  <h1>Pick Next Video</h1>
+
+  {% if locked %}
+    <div class="banner warn">Requests are currently locked by admin.</div>
+  {% endif %}
+
+  <div class="grid">
+    {% for it in items %}
+      <button class="card" onclick="requestVideo({{ it.id }}, '{{ it.title|e }}')" {% if locked %}disabled{% endif %}>
+        <div class="title">{{ it.title }}</div>
+        <div class="sub">Tap to set “Next”</div>
+      </button>
+    {% endfor %}
+  </div>
+
+  <div class="msgbox">
+    <input id="note" placeholder="Optional message (e.g. Happy birthday Juan!)" maxlength="120" />
+  </div>
+
+  <div id="status" class="status"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function requestVideo(catalogId, title) {
+    const note = document.getElementById('note').value || '';
+    fetch('/api/request_video', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({catalog_id: catalogId, note_text: note})
+    }).then(r => r.json()).then(j => {
+      const s = document.getElementById('status');
+      if (j.ok) {
+        s.textContent = `Queued: ${title}`;
+        document.getElementById('note').value = '';
+      } else {
+        s.textContent = `Error: ${j.error || 'unknown'}`;
+      }
+    }).catch(() => {
+      document.getElementById('status').textContent = 'Network error';
+    });
+  }
+</script>
+{% endblock %}

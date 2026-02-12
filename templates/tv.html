@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="tv">
+  <div id="playerWrap" class="playerWrap">
+    <div id="player"></div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+</div>
+
+<!-- YouTube IFrame API -->
+<script src="https://www.youtube.com/iframe_api"></script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Simple polling TV loop. No websockets for POC.
+  let ytPlayer = null;
+  let currentQueueId = null;
+  let currentVideoId = null;
+  let suppressNextUntil = 0;
+
+  function showToast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.remove('hidden');
+    setTimeout(() => el.classList.add('hidden'), 3500);
+  }
+
+  function api(path, body) {
+    return fetch(path, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(body || {})
+    }).then(r => r.json());
+  }
+
+  function pollState() {
+    if (Date.now() < suppressNextUntil) return;
+    fetch('/api/state').then(r => r.json()).then(st => {
+      if (!st.next) return;
+      const nxt = st.next;
+      if (currentQueueId === nxt.queue_id) return;
+
+      // If we're already playing something, only switch when it ends.
+      // So we just preload knowledge; actual play happens on end handler.
+      window.__next = nxt;
+      showToast("Next selected: " + nxt.title);
+    }).catch(() => {});
+  }
+
+  function playVideoId(videoId) {
+    currentVideoId = videoId;
+    if (!ytPlayer) return;
+    ytPlayer.loadVideoById(videoId);
+  }
+
+  function startNextIfAvailable() {
+    const nxt = window.__next || null;
+    if (!nxt) return;
+
+    currentQueueId = nxt.queue_id;
+
+    api('/api/tv/mark_playing', {queue_id: currentQueueId}).then(() => {});
+    playVideoId(nxt.youtube_id);
+
+    if (nxt.note_text) {
+      showToast(nxt.note_text);
+    }
+
+    // Clear next
+    window.__next = null;
+  }
+
+  // YouTube callback
+  function onYouTubeIframeAPIReady() {
+    ytPlayer = new YT.Player('player', {
+      width: '100%',
+      height: '100%',
+      videoId: '',
+      playerVars: {
+        autoplay: 1,
+        controls: 0,
+        rel: 0,
+        modestbranding: 1
+      },
+      events: {
+        onReady: () => {
+          // Nothing playing initially; we’ll start when a pick arrives.
+          setInterval(pollState, 2000);
+          setInterval(() => {
+            // If we're not playing anything, start immediately
+            const state = ytPlayer.getPlayerState();
+            if (state !== YT.PlayerState.PLAYING && state !== YT.PlayerState.BUFFERING) {
+              startNextIfAvailable();
+            }
+          }, 1500);
+        },
+        onStateChange: (e) => {
+          if (e.data === YT.PlayerState.ENDED) {
+            // Mark done
+            if (currentQueueId) {
+              api('/api/tv/mark_done', {queue_id: currentQueueId}).then(() => {});
+              currentQueueId = null;
+              suppressNextUntil = Date.now() + 800; // small debounce
+            }
+            // Immediately try next
+            startNextIfAvailable();
+          }
+        }
+      }
+    });
+  }
+</script>
+{% endblock %}

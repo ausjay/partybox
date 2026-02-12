@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block body %}
+<div class="page">
+  <h1>Admin</h1>
+  <div class="row">
+    <button class="btn" onclick="skip()">Skip</button>
+    <button class="btn" onclick="clearQueue()">Clear Queue</button>
+    <button class="btn" onclick="toggleLock()">{{ "Unlock Requests" if locked else "Lock Requests" }}</button>
+  </div>
+
+  <h2>Catalog</h2>
+  <div class="row">
+    <input id="title" placeholder="Title" />
+    <input id="youtube_id" placeholder="YouTube ID (e.g. dQw4w9WgXcQ)" />
+    <button class="btn" onclick="addItem()">Add</button>
+  </div>
+
+  <div class="list">
+    {% for it in items %}
+      <div class="listrow">
+        <div class="grow">
+          <div class="title">{{ it.title }}</div>
+          <div class="sub">YT: {{ it.youtube_id }} {% if it.enabled == 0 %}<span class="muted">(disabled)</span>{% endif %}</div>
+        </div>
+        <button class="btn" onclick="setEnabled({{ it.id }}, {{ 0 if it.enabled else 1 }})">
+          {{ "Disable" if it.enabled else "Enable" }}
+        </button>
+      </div>
+    {% endfor %}
+  </div>
+
+  <div id="status" class="status"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const KEY = "{{ key|e }}";
+  let locked = {{ "true" if locked else "false" }};
+
+  function post(path, body) {
+    return fetch(path + `?key=${encodeURIComponent(KEY)}`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body || {})
+    }).then(r => r.json());
+  }
+
+  function setStatus(t) { document.getElementById('status').textContent = t; }
+
+  function addItem() {
+    const title = document.getElementById('title').value.trim();
+    const youtube_id = document.getElementById('youtube_id').value.trim();
+    post('/api/admin/catalog_add', {title, youtube_id}).then(j => {
+      if (j.ok) location.reload();
+      else setStatus('Error: ' + (j.error || 'unknown'));
+    });
+  }
+
+  function setEnabled(id, enabled) {
+    post('/api/admin/catalog_enable', {id, enabled: !!enabled}).then(j => {
+      if (j.ok) location.reload();
+      else setStatus('Error: ' + (j.error || 'unknown'));
+    });
+  }
+
+  function toggleLock() {
+    locked = !locked;
+    post('/api/admin/lock', {locked}).then(j => {
+      if (j.ok) location.reload();
+      else setStatus('Error: ' + (j.error || 'unknown'));
+    });
+  }
+
+  function skip() {
+    post('/api/admin/skip', {}).then(j => setStatus(j.ok ? 'Skipped.' : 'Error.'));
+  }
+
+  function clearQueue() {
+    post('/api/admin/clear_queue', {}).then(j => setStatus(j.ok ? 'Queue cleared.' : 'Error.'));
+  }
+</script>
+{% endblock %}
