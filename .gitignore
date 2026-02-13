@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 data/media/
 partybox/__pycache__/
+
+.venv/
