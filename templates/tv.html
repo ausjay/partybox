@@ -1,153 +1,140 @@
-{% extends "base.html" %}
-{% block body %}
-<div class="tv">
-  <div id="playerWrap" class="playerWrap">
-    <div id="player"></div>
-  </div>
-  <div id="toast" class="toast hidden"></div>
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PartyBox TV</title>
+  <style>
+    html, body { margin:0; padding:0; background:#000; height:100%; overflow:hidden; }
+    #wrap { position:relative; width:100%; height:100%; }
+    #vid { width:100%; height:100%; object-fit:contain; background:#000; }
+    #msg {
+      position:absolute; left:0; right:0; top:0;
+      padding:16px 20px;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color:#fff;
+      background: linear-gradient(rgba(0,0,0,0.65), rgba(0,0,0,0));
+      font-size: 18px;
+    }
+    #note {
+      position:absolute; left:0; right:0; bottom:0;
+      padding:18px 22px;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color:#fff;
+      background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.65));
+      font-size: 22px;
+      display:none;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.9);
+    }
+  </style>
+</head>
+<body>
+<div id="wrap">
+  <video id="vid" playsinline autoplay muted="false"></video>
+  <div id="msg">PartyBox TV — waiting…</div>
+  <div id="note"></div>
 </div>
 
-<script src="https://www.youtube.com/iframe_api"></script>
-{% endblock %}
-
-{% block scripts %}
 <script>
-  let ytPlayer = null;
+const vid = document.getElementById("vid");
+const msg = document.getElementById("msg");
+const note = document.getElementById("note");
 
-  let currentQueueId = null;
-  let currentVideoId = null;
-  let suppressUntil = 0;
+let currentKey = null;
 
-  // Next candidate from server (/api/state)
-  window.__next = null;
+function isLocalToken(yid) {
+  return (yid || "").startsWith("file:");
+}
+function localFilenameFromToken(yid) {
+  return (yid || "").slice("file:".length).trim();
+}
 
-  function showToast(msg) {
-    const el = document.getElementById('toast');
-    el.textContent = msg;
-    el.classList.remove('hidden');
-    setTimeout(() => el.classList.add('hidden'), 3500);
-  }
+async function api(path, opts={}) {
+  const r = await fetch(path, Object.assign({cache:"no-store"}, opts));
+  if (!r.ok) throw new Error(`${path} -> ${r.status}`);
+  return await r.json();
+}
 
-  function api(path, body) {
-    return fetch(path, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(body || {})
-    }).then(r => r.json());
-  }
+async function poll() {
+  try {
+    const state = await api("/api/state");
+    if (!state.next) {
+      msg.textContent = "PartyBox TV — no videos available";
+      note.style.display = "none";
+      return;
+    }
 
-  function pollState() {
-    if (Date.now() < suppressUntil) return;
+    const n = state.next;
+    const key = `${state.mode}:${n.queue_id || "idle"}:${n.youtube_id}`;
 
-    fetch('/api/state')
-      .then(r => r.json())
-      .then(st => {
-        if (!st.next) return;
+    // Update banner
+    msg.textContent = (state.mode === "queue")
+      ? `Up next: ${n.title}`
+      : `Idle: ${n.title}`;
 
-        const nxt = st.next;
-
-        // If we're already playing this exact video, do nothing
-        if (currentVideoId === nxt.youtube_id) return;
-
-        // Always keep a candidate next (queue or idle)
-        window.__next = { ...nxt, mode: st.mode || "queue" };
-
-        if ((st.mode || "queue") === "queue") {
-          showToast("Next selected: " + nxt.title);
-        }
-      })
-      .catch(() => {});
-  }
-
-  function playVideoId(videoId) {
-    currentVideoId = videoId;
-    if (!ytPlayer) return;
-
-    // Autoplay is most reliable when muted.
-    ytPlayer.mute();
-    ytPlayer.loadVideoById(videoId);
-  }
-
-  function startNextIfAvailable() {
-    const nxt = window.__next || null;
-    if (!nxt) return;
-
-    // Queue item vs idle item
-    if (nxt.queue_id) {
-      currentQueueId = nxt.queue_id;
-      api('/api/tv/mark_playing', {queue_id: currentQueueId}).then(() => {});
-      if (nxt.note_text) showToast(nxt.note_text);
+    // Overlay note
+    if (n.note_text && n.note_text.trim()) {
+      note.textContent = n.note_text.trim();
+      note.style.display = "block";
     } else {
-      currentQueueId = null;
+      note.style.display = "none";
     }
 
-    playVideoId(nxt.youtube_id);
-    window.__next = null;
-  }
+    // If already playing this, do nothing
+    if (currentKey === key && !vid.paused) return;
 
-  function finishAndAdvance(reason) {
-    if (reason) showToast(reason);
+    // Switch source
+    currentKey = key;
 
-    // Mark done if it was a queued item
-    if (currentQueueId) {
-      api('/api/tv/mark_done', {queue_id: currentQueueId}).then(() => {});
-      currentQueueId = null;
-    }
+    if (isLocalToken(n.youtube_id)) {
+      const fn = localFilenameFromToken(n.youtube_id);
+      const src = `/media/${encodeURIComponent(fn)}`;
+      vid.src = src;
+      vid.load();
 
-    suppressUntil = Date.now() + 800;
-    // Immediately try another
-    startNextIfAvailable();
-  }
+      // Try to play with sound; if browser blocks, it will fail.
+      vid.muted = false;
+      const p = vid.play();
+      if (p) p.catch(() => {
+        // fallback to muted autoplay if required
+        vid.muted = true;
+        vid.play().catch(()=>{});
+      });
 
-  function onYouTubeIframeAPIReady() {
-    ytPlayer = new YT.Player('player', {
-      width: '100%',
-      height: '100%',
-      videoId: '',
-      playerVars: {
-        autoplay: 1,
-        controls: 0,
-        rel: 0,
-        modestbranding: 1,
-        playsinline: 1
-      },
-      events: {
-        onReady: () => {
-          // Poll for next/idle
-          setInterval(pollState, 2000);
-
-          // If nothing is playing, start something (idle or queued)
-          setInterval(() => {
-            try {
-              const state = ytPlayer.getPlayerState();
-              if (state !== YT.PlayerState.PLAYING && state !== YT.PlayerState.BUFFERING) {
-                startNextIfAvailable();
-              }
-            } catch (e) {}
-          }, 1500);
-        },
-
-        onStateChange: (e) => {
-          if (e.data === YT.PlayerState.PLAYING) {
-            // Try to unmute after playback starts (may be blocked by browser policy)
-            try { ytPlayer.unMute(); } catch (err) {}
-          }
-
-          if (e.data === YT.PlayerState.ENDED) {
-            finishAndAdvance(null);
-          }
-        },
-
-        onError: (err) => {
-          const code = (err && err.data) ? err.data : null;
-          // 101/150 are commonly "embed disabled"
-          const msg = (code === 101 || code === 150)
-            ? "Video blocked (embed). Skipping…"
-            : "Playback error. Skipping…";
-          finishAndAdvance(msg);
-        }
+      // Mark queue playing once we start (best effort)
+      if (state.mode === "queue" && n.queue_id) {
+        fetch("/api/tv/mark_playing", {
+          method:"POST",
+          headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({queue_id: n.queue_id})
+        }).catch(()=>{});
       }
-    });
+    } else {
+      // Legacy: YouTube embed mode not supported reliably; show message
+      msg.textContent = `Cannot play YouTube embeds reliably. Use local files. (${n.youtube_id})`;
+      vid.removeAttribute("src");
+      vid.load();
+    }
+  } catch (e) {
+    msg.textContent = `TV error: ${e}`;
   }
+}
+
+vid.addEventListener("ended", async () => {
+  try {
+    const state = await api("/api/state");
+    if (state.mode === "queue" && state.next && state.next.queue_id) {
+      await fetch("/api/tv/mark_done", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({queue_id: state.next.queue_id})
+      });
+    }
+  } catch (_) {}
+});
+
+setInterval(poll, 1000);
+poll();
 </script>
-{% endblock %}
+</body>
+</html>

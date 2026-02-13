@@ -20,6 +20,19 @@ def create_app() -> Flask:
     def index():
         return redirect(url_for("tv"))
 
+    @app.get("/media/<path:filename>")
+    def media(filename: str):
+        from flask import send_from_directory, abort
+
+        media_dir = os.path.join(os.path.dirname(__file__), "..", "data", "media")
+        media_dir = os.path.abspath(media_dir)
+
+        # Basic path safety: send_from_directory already helps, but keep it tight
+        if ".." in filename or filename.startswith("/"):
+            abort(400)
+
+        return send_from_directory(media_dir, filename, conditional=True)
+
     # ---------- Pages ----------
     @app.get("/tv")
     def tv():
@@ -126,11 +139,32 @@ def create_app() -> Flask:
         if not raw:
             return jsonify({"ok": False, "error": "missing youtube url or id"}), 400
 
-        # Accept either a bare YouTube ID or a full URL.
+        # --- Local file mode ---
+        # Accept:
+        #   file:My Video.mp4
+        #   My Video.mp4        (assumed local)
+        media_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "media"))
+
+        def _exists_in_media(fn: str) -> bool:
+            if not fn or ".." in fn or fn.startswith("/"):
+                return False
+            p = os.path.abspath(os.path.join(media_dir, fn))
+            return p.startswith(media_dir + os.sep) and os.path.isfile(p)
+
+        if raw.startswith("file:") or raw.lower().endswith(".mp4"):
+            filename = raw[5:].strip() if raw.startswith("file:") else raw
+            if not _exists_in_media(filename):
+                return jsonify({"ok": False, "error": f"local_file_not_found: {filename}"}), 400
+
+            youtube_id = f"file:{filename}"
+            title = (data.get("title") or "").strip() or os.path.splitext(filename)[0]
+            DB.add_catalog_item(title, youtube_id)
+            return jsonify({"ok": True, "title": title, "youtube_id": youtube_id})
+
+        # --- YouTube mode (legacy) ---
         youtube_id = raw
 
         if "youtube.com" in raw or "youtu.be" in raw:
-            import re
             m = re.search(r"youtu\.be/([A-Za-z0-9_-]{6,})", raw)
             if not m:
                 m = re.search(r"[?&]v=([A-Za-z0-9_-]{6,})", raw)
@@ -161,30 +195,9 @@ def create_app() -> Flask:
         if not title:
             title = f"YouTube {youtube_id}"
 
-        # Probe embed viability (best-effort)
-        # If blocked, YouTube often serves a page containing "Video unavailable" or "errorScreen"
-        try:
-            import urllib.request
-
-            embed_url = f"https://www.youtube.com/embed/{youtube_id}"
-            req = urllib.request.Request(
-                embed_url,
-                headers={
-                    "User-Agent": "Mozilla/5.0 (X11; Linux) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari"
-                },
-            )
-            with urllib.request.urlopen(req, timeout=6) as resp:
-                html = resp.read(50000).decode("utf-8", "replace")
-                low = html.lower()
-                if "video unavailable" in low or "errorscreen" in low:
-                    return jsonify({"ok": False, "error": "embed_blocked"}), 400
-        except Exception:
-            # If probe fails due to network, still allow add
-            pass
-
+        # Keep your embed probe if you want, but it’s irrelevant for local-playback POC
         DB.add_catalog_item(title, youtube_id)
         return jsonify({"ok": True, "title": title, "youtube_id": youtube_id})
-
 
     @app.post("/api/admin/catalog_enable")
     def api_catalog_enable():
