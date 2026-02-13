@@ -9,12 +9,38 @@ from . import db as DB
 
 YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,}$")
 
-
+  
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="../static", template_folder="../templates")
 
     DB.init_db()
     DB.seed_if_empty()
+    #_sync_local_media()
+
+    def _sync_local_media() -> Dict[str, Any]:
+        """
+        Scan data/media for .mp4 files and ensure each has a catalog entry:
+          youtube_id = file:<filename>
+          title      = filename sans extension (unless already exists in DB)
+        """
+        media_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "media"))
+        os.makedirs(media_dir, exist_ok=True)
+
+        added = 0
+        seen = 0
+        for name in sorted(os.listdir(media_dir)):
+            if not name.lower().endswith(".mp4"):
+                continue
+            if ".." in name or name.startswith("/"):
+                continue
+
+            seen += 1
+            youtube_id = f"file:{name}"
+            title = os.path.splitext(name)[0]
+            if DB.upsert_catalog_item(title=title, youtube_id=youtube_id):
+                added += 1
+
+        return {"media_dir": media_dir, "seen_mp4": seen, "added": added}
 
     @app.get("/")
     def index():
@@ -91,6 +117,15 @@ def create_app() -> Flask:
 
         return jsonify({"locked": locked, "mode": "empty", "next": None})
 
+    @app.post("/api/admin/media_scan")
+    def api_admin_media_scan():
+        admin_key = DB.get_setting("admin_key", "JBOX")
+        key = request.args.get("key", "")
+        if key != admin_key:
+            return jsonify({"ok": False, "error": "forbidden"}), 403
+
+        result = _sync_local_media()
+        return jsonify({"ok": True, **result})
 
 
     @app.post("/api/tv/mark_playing")

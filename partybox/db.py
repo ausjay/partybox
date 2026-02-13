@@ -38,6 +38,8 @@ def init_db() -> None:
         );
         """
     )
+    # Ensure youtube_id is unique (needed for auto-scan + upserts)
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_youtube_id ON catalog(youtube_id);")
 
     cur.execute(
         """
@@ -206,16 +208,77 @@ def clear_queue() -> None:
     con.commit()
     con.close()
 
-def pick_idle() -> Optional[sqlite3.Row]:
+def pick_idle():
+    """
+    Prefer local media (file:...) for idle playback.
+    Fallback to any enabled catalog item if no local files exist.
+    """
+    conn = connect()
+    cur = conn.cursor()
+
+    # 1) Prefer enabled local items
+    cur.execute(
+        """
+        SELECT id, title, youtube_id
+        FROM catalog
+        WHERE enabled=1 AND youtube_id LIKE 'file:%'
+        ORDER BY RANDOM()
+        LIMIT 1
+        """
+    )
+    row = cur.fetchone()
+    if row:
+        return {"id": row[0], "title": row[1], "youtube_id": row[2]}
+
+    # 2) Fallback: any enabled item
+    cur.execute(
+        """
+        SELECT id, title, youtube_id
+        FROM catalog
+        WHERE enabled=1
+        ORDER BY RANDOM()
+        LIMIT 1
+        """
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    return {"id": row[0], "title": row[1], "youtube_id": row[2]}
+
+
+def upsert_catalog_item(title: str, youtube_id: str) -> bool:
+    """
+    Ensure a catalog row exists for youtube_id (including file: entries).
+    Returns True if it inserted a new row, False if it already existed.
+    """
+    con = connect()
+
+    # Do not overwrite existing titles (could be customized)
+    cur = con.execute("SELECT id FROM catalog WHERE youtube_id=?", (youtube_id,))
+    row = cur.fetchone()
+    if row:
+        con.close()
+        return False
+
+    con.execute(
+        "INSERT INTO catalog(title,youtube_id,enabled) VALUES(?,?,1)",
+        (title.strip(), youtube_id.strip()),
+    )
+    con.commit()
+    con.close()
+    return True
+
+def catalog_has_youtube_id(youtube_id: str) -> bool:
+    con = connect()
+    row = con.execute("SELECT 1 FROM catalog WHERE youtube_id=? LIMIT 1", (youtube_id,)).fetchone()
+    con.close()
+    return bool(row)
+
+
+def list_local_files() -> List[sqlite3.Row]:
     con = connect()
     rows = con.execute(
-        "SELECT id, title, youtube_id FROM catalog WHERE enabled=1 ORDER BY title COLLATE NOCASE"
+        "SELECT * FROM catalog WHERE youtube_id LIKE 'file:%' ORDER BY title COLLATE NOCASE"
     ).fetchall()
     con.close()
-    if not rows:
-        return None
-
-    import time
-    idx = int(time.time() // 90) % len(rows)  # rotate every 90s
-    return rows[idx]
-
+    return rows
