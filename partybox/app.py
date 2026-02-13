@@ -3,25 +3,27 @@ from __future__ import annotations
 
 import os
 import re
-from flask import Flask, jsonify, render_template, request, redirect, url_for
+from pathlib import Path
+from typing import Any, Dict
+
+from flask import Flask, jsonify, render_template, request, redirect, url_for, send_from_directory, abort
 
 from . import db as DB
 
 YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,}$")
 
-  
+
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="../static", template_folder="../templates")
 
     DB.init_db()
     DB.seed_if_empty()
-    #_sync_local_media()
 
     def _sync_local_media() -> Dict[str, Any]:
         """
         Scan data/media for .mp4 files and ensure each has a catalog entry:
           youtube_id = file:<filename>
-          title      = filename sans extension (unless already exists in DB)
+          title      = filename sans extension
         """
         media_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "media"))
         os.makedirs(media_dir, exist_ok=True)
@@ -42,22 +44,48 @@ def create_app() -> Flask:
 
         return {"media_dir": media_dir, "seen_mp4": seen, "added": added}
 
+    # optional auto scan on service start
+    if os.getenv("PARTYBOX_AUTO_MEDIA_SCAN", "0") == "1":
+        try:
+            r = _sync_local_media()
+            print(f"[partybox] media auto-scan ok: seen={r['seen_mp4']} added={r['added']} dir={r['media_dir']}", flush=True)
+        except Exception as e:
+            print(f"[partybox] media auto-scan FAILED: {e}", flush=True)
+
     @app.get("/")
     def index():
         return redirect(url_for("tv"))
 
     @app.get("/media/<path:filename>")
     def media(filename: str):
-        from flask import send_from_directory, abort
+        # Configurable media directory (default: ../data/media)
+        media_dir = os.getenv("PARTYBOX_MEDIA_DIR", "").strip()
+        if media_dir:
+            media_dir = os.path.abspath(media_dir)
+        else:
+            media_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "media"))
 
-        media_dir = os.path.join(os.path.dirname(__file__), "..", "data", "media")
-        media_dir = os.path.abspath(media_dir)
+        base = Path(media_dir)
 
-        # Basic path safety: send_from_directory already helps, but keep it tight
-        if ".." in filename or filename.startswith("/"):
+        # Tight path safety: only allow a single file name (no subdirs)
+        name = Path(filename).name
+        if not name or name.startswith(".") or ".." in filename or filename.startswith("/"):
             abort(400)
 
-        return send_from_directory(media_dir, filename, conditional=True)
+        exact = base / name
+        if exact.is_file():
+            return send_from_directory(str(base), name, conditional=True)
+
+        # Case-insensitive fallback
+        try:
+            target_lower = name.lower()
+            for f in base.iterdir():
+                if f.is_file() and f.name.lower() == target_lower:
+                    return send_from_directory(str(base), f.name, conditional=True)
+        except FileNotFoundError:
+            pass
+
+        abort(404)
 
     # ---------- Pages ----------
     @app.get("/tv")
@@ -95,7 +123,7 @@ def create_app() -> Flask:
                         "queue_id": int(nxt["id"]),
                         "title": nxt["title"],
                         "youtube_id": nxt["youtube_id"],
-                        "note_text": nxt["note_text"] or "",
+                        "note_text": nxt.get("note_text") or "",
                     },
                 }
             )
@@ -117,6 +145,11 @@ def create_app() -> Flask:
 
         return jsonify({"locked": locked, "mode": "empty", "next": None})
 
+    @app.get("/api/queue")
+    def api_queue():
+        items = DB.list_queue(limit=25)
+        return jsonify({"items": items})
+
     @app.post("/api/admin/media_scan")
     def api_admin_media_scan():
         admin_key = DB.get_setting("admin_key", "JBOX")
@@ -126,7 +159,6 @@ def create_app() -> Flask:
 
         result = _sync_local_media()
         return jsonify({"ok": True, **result})
-
 
     @app.post("/api/tv/mark_playing")
     def api_mark_playing():
@@ -170,14 +202,10 @@ def create_app() -> Flask:
 
         data = request.get_json(force=True, silent=True) or {}
         raw = (data.get("youtube") or data.get("youtube_id") or "").strip()
-
         if not raw:
             return jsonify({"ok": False, "error": "missing youtube url or id"}), 400
 
         # --- Local file mode ---
-        # Accept:
-        #   file:My Video.mp4
-        #   My Video.mp4        (assumed local)
         media_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "media"))
 
         def _exists_in_media(fn: str) -> bool:
@@ -196,9 +224,8 @@ def create_app() -> Flask:
             DB.add_catalog_item(title, youtube_id)
             return jsonify({"ok": True, "title": title, "youtube_id": youtube_id})
 
-        # --- YouTube mode (legacy) ---
+        # --- YouTube mode (kept, but TV will ignore unless PARTYBOX_ALLOW_YOUTUBE=1) ---
         youtube_id = raw
-
         if "youtube.com" in raw or "youtu.be" in raw:
             m = re.search(r"youtu\.be/([A-Za-z0-9_-]{6,})", raw)
             if not m:
@@ -211,26 +238,7 @@ def create_app() -> Flask:
         if not youtube_id or not YOUTUBE_ID_RE.match(youtube_id):
             return jsonify({"ok": False, "error": "bad youtube id"}), 400
 
-        # Auto-fetch title via oEmbed (no API key)
-        title = (data.get("title") or "").strip()
-        if not title:
-            try:
-                import urllib.parse
-                import urllib.request
-                import json as _json
-
-                watch_url = f"https://www.youtube.com/watch?v={youtube_id}"
-                oembed = "https://www.youtube.com/oembed?format=json&url=" + urllib.parse.quote(watch_url, safe="")
-                with urllib.request.urlopen(oembed, timeout=6) as resp:
-                    payload = _json.loads(resp.read().decode("utf-8", "replace"))
-                    title = (payload.get("title") or "").strip()
-            except Exception:
-                title = ""
-
-        if not title:
-            title = f"YouTube {youtube_id}"
-
-        # Keep your embed probe if you want, but it’s irrelevant for local-playback POC
+        title = (data.get("title") or "").strip() or f"YouTube {youtube_id}"
         DB.add_catalog_item(title, youtube_id)
         return jsonify({"ok": True, "title": title, "youtube_id": youtube_id})
 
@@ -284,8 +292,8 @@ def create_app() -> Flask:
 
 def main() -> None:
     app = create_app()
-    # Pi POC: bind on LAN
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=True)
+    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=debug)
 
 
 if __name__ == "__main__":

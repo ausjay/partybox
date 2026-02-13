@@ -10,8 +10,8 @@
 
   <h2>Catalog</h2>
   <div class="row">
-    <input id="title" placeholder="Title" />
-  <input id="youtube_id" placeholder="Paste YouTube URL (or ID)" />
+    <input id="title" placeholder="Title (optional)" />
+    <input id="youtube_id" placeholder="YouTube URL/ID or local file (.mp4 or file:Name.mp4)" />
     <button class="btn" onclick="addItem()">Add</button>
   </div>
 
@@ -20,7 +20,14 @@
       <div class="listrow">
         <div class="grow">
           <div class="title">{{ it.title }}</div>
-          <div class="sub">YT: {{ it.youtube_id }} {% if it.enabled == 0 %}<span class="muted">(disabled)</span>{% endif %}</div>
+          <div class="sub">
+            {% if it.youtube_id.startswith("file:") %}
+              Local: {{ it.youtube_id[5:] }}
+            {% else %}
+              YT: {{ it.youtube_id }}
+            {% endif %}
+            {% if it.enabled == 0 %}<span class="muted">(disabled)</span>{% endif %}
+          </div>
         </div>
         <button class="btn" onclick="setEnabled({{ it.id }}, {{ 0 if it.enabled else 1 }})">
           {{ "Disable" if it.enabled else "Enable" }}
@@ -49,14 +56,13 @@
   function setStatus(t) { document.getElementById('status').textContent = t; }
 
   function addItem() {
-    const title = document.getElementById('title').value.trim(); // optional now
+    const title = document.getElementById('title').value.trim();
     const youtube_id = document.getElementById('youtube_id').value.trim();
     post('/api/admin/catalog_add', {title, youtube_id}).then(j => {
       if (j.ok) location.reload();
       else setStatus('Error: ' + (j.error || 'unknown'));
     });
   }
-
 
   function setEnabled(id, enabled) {
     post('/api/admin/catalog_enable', {id, enabled: !!enabled}).then(j => {

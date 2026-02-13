@@ -11,7 +11,7 @@
     {% for it in items %}
       <button class="card" onclick="requestVideo({{ it.id }}, '{{ it.title|e }}')" {% if locked %}disabled{% endif %}>
         <div class="title">{{ it.title }}</div>
-        <div class="sub">Tap to set “Next”</div>
+        <div class="sub">Tap to add to queue</div>
       </button>
     {% endfor %}
   </div>
@@ -20,12 +20,42 @@
     <input id="note" placeholder="Optional message (e.g. Happy birthday Juan!)" maxlength="120" />
   </div>
 
+  <div style="margin-top:18px; font-size:16px; opacity:0.9;">Queue</div>
+  <div id="queue" style="margin-top:10px; opacity:0.9;"></div>
+
   <div id="status" class="status"></div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+  function renderQueue(items) {
+    const el = document.getElementById('queue');
+    if (!items || !items.length) {
+      el.textContent = '(empty)';
+      return;
+    }
+    el.innerHTML = items.slice(0, 15).map((it, idx) => {
+      const tag = (it.status === 'playing') ? '▶' : (idx+1) + '.';
+      return `<div style="padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.06);">
+        <span style="display:inline-block; width:28px; opacity:0.85;">${tag}</span>
+        <span>${escapeHtml(it.title || '')}</span>
+        ${it.note_text ? `<span style="opacity:0.75;"> — ${escapeHtml(it.note_text)}</span>` : ``}
+      </div>`;
+    }).join('');
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function refreshQueue() {
+    fetch('/api/queue', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(j => renderQueue(j.items || []))
+      .catch(() => { document.getElementById('queue').textContent = '(queue unavailable)'; });
+  }
+
   function requestVideo(catalogId, title) {
     const note = document.getElementById('note').value || '';
     fetch('/api/request_video', {
@@ -37,6 +67,7 @@
       if (j.ok) {
         s.textContent = `Queued: ${title}`;
         document.getElementById('note').value = '';
+        refreshQueue();
       } else {
         s.textContent = `Error: ${j.error || 'unknown'}`;
       }
@@ -44,5 +75,8 @@
       document.getElementById('status').textContent = 'Network error';
     });
   }
+
+  refreshQueue();
+  setInterval(refreshQueue, 3000);
 </script>
 {% endblock %}
