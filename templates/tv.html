@@ -8,7 +8,6 @@
     html, body { margin:0; padding:0; background:#000; height:100%; overflow:hidden; }
     #wrap { position:relative; width:100%; height:100%; }
     #vid { width:100%; height:100%; object-fit:contain; background:#000; }
-
     #msg {
       position:absolute; left:0; right:0; top:0;
       padding:16px 20px;
@@ -16,9 +15,8 @@
       color:#fff;
       background: linear-gradient(rgba(0,0,0,0.65), rgba(0,0,0,0));
       font-size: 18px;
-      pointer-events:none;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.9);
     }
-
     #note {
       position:absolute; left:0; right:0; bottom:0;
       padding:18px 22px;
@@ -28,29 +26,7 @@
       font-size: 22px;
       display:none;
       text-shadow: 0 2px 10px rgba(0,0,0,0.9);
-      pointer-events:none;
     }
-
-    #controls {
-      position:absolute;
-      left:14px; bottom:14px;
-      display:flex; gap:10px;
-      z-index:5;
-    }
-    .btn {
-      appearance:none;
-      border:1px solid rgba(255,255,255,0.18);
-      background: rgba(20, 22, 28, 0.7);
-      color:#fff;
-      padding:10px 14px;
-      border-radius:12px;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      font-size:14px;
-      cursor:pointer;
-      user-select:none;
-      backdrop-filter: blur(10px);
-    }
-    .btn:hover { background: rgba(30, 34, 44, 0.75); }
   </style>
 </head>
 <body>
@@ -58,12 +34,6 @@
   <video id="vid" playsinline autoplay></video>
   <div id="msg">PartyBox TV — waiting…</div>
   <div id="note"></div>
-
-  <div id="controls">
-    <button class="btn" id="btnPlayPause">Pause</button>
-    <button class="btn" id="btnStop">Stop</button>
-    <button class="btn" id="btnNext">Next</button>
-  </div>
 </div>
 
 <script>
@@ -71,18 +41,8 @@ const vid  = document.getElementById("vid");
 const msg  = document.getElementById("msg");
 const note = document.getElementById("note");
 
-const btnPlayPause = document.getElementById("btnPlayPause");
-const btnStop      = document.getElementById("btnStop");
-const btnNext      = document.getElementById("btnNext");
-
-let currentKey = null;
-let currentMode = null;      // idle|queue
-let currentQueueId = null;   // number|null
-let stopped = false;
-
-// error retry (per key)
-let lastErrorKey = null;
-let errorRetries = 0;
+let playingLock = null;   // { youtube_id, queue_id|null, mode }
+let lastState = null;
 
 function isLocalToken(yid) {
   return (yid || "").startsWith("file:");
@@ -92,213 +52,172 @@ function localFilenameFromToken(yid) {
 }
 
 async function api(path, opts={}) {
-  const r = await fetch(path, Object.assign({ cache: "no-store" }, opts));
+  const r = await fetch(path, Object.assign({cache:"no-store"}, opts));
   if (!r.ok) throw new Error(`${path} -> ${r.status}`);
   return await r.json();
 }
 
-function setBanner(state, n) {
-  msg.textContent = (state.mode === "queue")
-    ? `Up next: ${n.title}`
-    : `Idle: ${n.title}`;
+function setBanner(state) {
+  const now = state.now;
+  const up  = state.up_next;
 
-  if (stopped) msg.textContent += " (stopped)";
+  if (state.paused) {
+    msg.textContent = now ? `PAUSED — ${now.title}` : "PAUSED — PartyBox TV";
+    return;
+  }
 
-  if (n.note_text && n.note_text.trim()) {
-    note.textContent = n.note_text.trim();
+  if (!now) {
+    msg.textContent = "PartyBox TV — no videos available";
+    return;
+  }
+
+  if (state.mode === "playing" || state.mode === "queue") {
+    if (up && up.title) msg.textContent = `Now: ${now.title}   •   Up next: ${up.title}`;
+    else msg.textContent = `Now: ${now.title}`;
+  } else {
+    msg.textContent = `Idle: ${now.title}`;
+  }
+}
+
+function setNote(text) {
+  const t = (text || "").trim();
+  if (t) {
+    note.textContent = t;
     note.style.display = "block";
   } else {
     note.style.display = "none";
   }
 }
 
-function clearVideo() {
-  vid.pause();
-  vid.removeAttribute("src");
-  vid.load();
+function forceStopAndUnlock() {
+  try { vid.pause(); } catch (_) {}
+  try { vid.removeAttribute("src"); vid.load(); } catch (_) {}
+  playingLock = null;
 }
 
-function playWithFallback() {
-  vid.muted = false;
+async function tryStartLocal(state) {
+  const now = state.now;
+  const fn  = localFilenameFromToken(now.youtube_id);
+  const src = `/media/${encodeURIComponent(fn)}`;
+
+  vid.src = src;
+  vid.load();
+
+  const desiredMuted = !!state.muted;
+  vid.muted = desiredMuted;
+
   const p = vid.play();
   if (p) {
     p.catch(() => {
-      vid.muted = true;
-      vid.play().catch(()=>{});
+      if (!desiredMuted) {
+        vid.muted = true;
+        vid.play().catch(()=>{});
+      }
     });
   }
-}
 
-function resetErrorTrackingForKey(key) {
-  if (lastErrorKey !== key) {
-    lastErrorKey = key;
-    errorRetries = 0;
+  // mark playing if queue item
+  if ((state.mode === "queue" || state.mode === "playing") && now.queue_id) {
+    fetch("/api/tv/mark_playing", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({queue_id: now.queue_id})
+    }).catch(()=>{});
   }
 }
 
-async function markPlaying(queueId) {
-  if (!queueId) return;
-  fetch("/api/tv/mark_playing", {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify({ queue_id: queueId })
-  }).catch(()=>{});
-}
+async function skipYouTubeIfQueued(state) {
+  const now = state.now;
+  msg.textContent = `Cannot play YouTube item here — skipping: ${now.title}`;
+  setNote("");
 
-async function markDone(queueId) {
-  if (!queueId) return;
-  fetch("/api/tv/mark_done", {
-    method:"POST",
-    headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify({ queue_id: queueId })
-  }).catch(()=>{});
-}
-
-async function switchTo(state, n) {
-  const key = `${state.mode}:${n.queue_id || "idle"}:${n.youtube_id}`;
-  resetErrorTrackingForKey(key);
-
-  setBanner(state, n);
-
-  if (stopped) return;
-  if (currentKey === key) return;
-
-  currentKey = key;
-  currentMode = state.mode;
-  currentQueueId = (state.mode === "queue" ? (n.queue_id || null) : null);
-
-  // If it's YouTube, immediately skip so TV never hangs.
-  if (!isLocalToken(n.youtube_id)) {
-    msg.textContent = `Skipping non-local item: ${n.youtube_id}`;
-    clearVideo();
-    if (state.mode === "queue" && currentQueueId) {
-      await markDone(currentQueueId);
-    }
-    currentKey = null;
-    currentMode = null;
-    currentQueueId = null;
-    return;
-  }
-
-  const fn = localFilenameFromToken(n.youtube_id);
-  const src = `/media/${encodeURIComponent(fn)}`;
-  vid.src = src;
-  vid.load();
-  playWithFallback();
-
-  if (state.mode === "queue" && n.queue_id) {
-    markPlaying(n.queue_id);
+  if (now.queue_id) {
+    await fetch("/api/tv/mark_done", {
+      method:"POST",
+      headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({queue_id: now.queue_id})
+    }).catch(()=>{});
   }
 }
 
 async function poll() {
   try {
     const state = await api("/api/state");
-    if (!state.next) {
-      msg.textContent = "PartyBox TV — no videos available";
-      note.style.display = "none";
-      currentKey = null;
-      currentMode = null;
-      currentQueueId = null;
-      clearVideo();
+    lastState = state;
+
+    // Pause behavior
+    if (state.paused) {
+      setBanner(state);
+      setNote("");
+      if (!vid.paused) vid.pause();
       return;
     }
 
-    const n = state.next;
-    setBanner(state, n);
-
-    if (state.mode === "queue") {
-      await switchTo(state, n);
+    // Nothing to do
+    if (!state.now) {
+      setBanner(state);
+      setNote("");
+      if (!vid.paused) vid.pause();
       return;
     }
 
-    // idle:
-    // If we're currently playing something and it isn't ended, don't hop.
-    if (currentMode === "idle" && currentKey && !vid.ended) return;
+    setBanner(state);
+    setNote(state.now.note_text || "");
 
-    await switchTo(state, n);
+    // NEW: if admin skipped/changed "now", break the lock immediately
+    if (playingLock && state.now) {
+      const serverQid = state.now.queue_id || null;
+      const serverYid = state.now.youtube_id || "";
+      const lockQid   = playingLock.queue_id || null;
+      const lockYid   = playingLock.youtube_id || "";
+
+      const serverAdvanced =
+        (lockQid && serverQid && serverQid !== lockQid) ||
+        (!lockQid && serverQid) ||
+        (serverYid && lockYid && serverYid !== lockYid);
+
+      if (serverAdvanced) {
+        forceStopAndUnlock();
+      }
+    }
+
+    // LOCK: if a video is currently playing, do NOT switch until it ends.
+    if (playingLock && !vid.paused && !vid.ended) {
+      return;
+    }
+
+    const now = state.now;
+
+    // New lock target
+    playingLock = { youtube_id: now.youtube_id, queue_id: now.queue_id || null, mode: state.mode };
+
+    if (isLocalToken(now.youtube_id)) {
+      await tryStartLocal(state);
+      return;
+    }
+
+    await skipYouTubeIfQueued(state);
+
   } catch (e) {
     msg.textContent = `TV error: ${e}`;
   }
 }
 
-// When video ends normally:
 vid.addEventListener("ended", async () => {
-  if (currentMode === "queue" && currentQueueId) {
-    await markDone(currentQueueId);
-  }
-  currentKey = null;
-  currentMode = null;
-  currentQueueId = null;
-  setTimeout(poll, 250);
+  try {
+    if (playingLock && playingLock.queue_id) {
+      await fetch("/api/tv/mark_done", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({queue_id: playingLock.queue_id})
+      });
+    }
+  } catch (_) {}
+
+  playingLock = null;
 });
 
-// On video error:
-// - retry same video once with cache buster
-// - if still erroring, skip it (and mark done if queued)
-vid.addEventListener("error", async () => {
-  if (!currentKey) return;
-
-  const err = vid.error ? vid.error.code : 0; // 1..4
-  if (errorRetries < 1 && isLocalToken((currentKey.split(":").slice(2).join(":")))) {
-    errorRetries += 1;
-    msg.textContent = `Video error (code ${err}) — retrying…`;
-    try {
-      const parts = currentKey.split(":");
-      const yid = parts.slice(2).join(":");
-      const fn = localFilenameFromToken(yid);
-      const src = `/media/${encodeURIComponent(fn)}?v=${Date.now()}`;
-      vid.src = src;
-      vid.load();
-      playWithFallback();
-      return;
-    } catch (_) {}
-  }
-
-  msg.textContent = `Video error (code ${err}) — skipping…`;
-  clearVideo();
-
-  if (currentMode === "queue" && currentQueueId) {
-    await markDone(currentQueueId);
-  }
-
-  currentKey = null;
-  currentMode = null;
-  currentQueueId = null;
-  setTimeout(poll, 250);
-});
-
-// Controls
-btnPlayPause.addEventListener("click", () => {
-  if (vid.paused) {
-    stopped = false;
-    btnPlayPause.textContent = "Pause";
-    vid.play().catch(()=>{});
-  } else {
-    vid.pause();
-    btnPlayPause.textContent = "Play";
-  }
-});
-
-btnStop.addEventListener("click", () => {
-  stopped = true;
-  btnPlayPause.textContent = "Play";
-  clearVideo();
-});
-
-btnNext.addEventListener("click", async () => {
-  stopped = false;
-  btnPlayPause.textContent = "Pause";
-  if (currentMode === "queue" && currentQueueId) {
-    await markDone(currentQueueId);
-  }
-  currentKey = null;
-  currentMode = null;
-  currentQueueId = null;
-  setTimeout(poll, 100);
-});
-
-setInterval(poll, 5000);
+setInterval(poll, 1000);
 poll();
 </script>
 </body>

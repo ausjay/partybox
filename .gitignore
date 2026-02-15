@@ -4,3 +4,6 @@ data/media/
 partybox/__pycache__/
 
 .venv/
+*.mp4
+*.avi
+*.mkv

@@ -1,17 +1,68 @@
 {% extends "base.html" %}
+{% block title %}PartyBox Admin{% endblock %}
 {% block body %}
 <div class="page">
   <h1>Admin</h1>
+
   <div class="row">
     <button class="btn" onclick="skip()">Skip</button>
     <button class="btn" onclick="clearQueue()">Clear Queue</button>
     <button class="btn" onclick="toggleLock()">{{ "Unlock Requests" if locked else "Lock Requests" }}</button>
+
+    {% if paused %}
+      <button class="btn" onclick="tvResume()">Resume TV</button>
+    {% else %}
+      <button class="btn" onclick="tvPause()">Pause TV</button>
+    {% endif %}
+
+    {% if muted %}
+      <button class="btn" onclick="tvUnmute()">Unmute</button>
+    {% else %}
+      <button class="btn" onclick="tvMute()">Mute</button>
+    {% endif %}
+
+    <button class="btn danger" onclick="tvStop()">Stop (pause + clear)</button>
+  </div>
+
+  <h2>Queue</h2>
+  <div class="list">
+    {% if queue|length == 0 %}
+      <div class="muted">Queue is empty.</div>
+    {% else %}
+      {% for q in queue %}
+        <div class="listrow {% if q.status == 'playing' %}playing{% endif %}">
+          <div class="grow">
+            <div class="title">
+              {% if q.status == 'playing' %}▶{% else %}{{ loop.index }}.{% endif %}
+              {{ q.title }}
+            </div>
+            <div class="sub">
+              {% if q.youtube_id.startswith("file:") %}
+                Local: {{ q.youtube_id[5:] }}
+              {% else %}
+                YT: {{ q.youtube_id }}
+              {% endif %}
+              {% if q.note_text %} • Note: {{ q.note_text }}{% endif %}
+            </div>
+          </div>
+
+          {% if q.status == 'queued' %}
+            <button class="btn" onclick="promote({{ q.id }})">Promote</button>
+          {% endif %}
+          <button class="btn danger" onclick="removeFromQueue({{ q.id }})">Remove</button>
+        </div>
+      {% endfor %}
+    {% endif %}
+  </div>
+
+  <div class="row" style="margin-top:10px;">
+    <button class="btn" onclick="mediaScan()">Media Scan</button>
   </div>
 
   <h2>Catalog</h2>
   <div class="row">
-    <input id="title" placeholder="Title (optional)" />
-    <input id="youtube_id" placeholder="YouTube URL/ID or local file (.mp4 or file:Name.mp4)" />
+    <input id="title" placeholder="Title" />
+    <input id="youtube_id" placeholder="Paste YouTube URL (or ID) OR Local.mp4" />
     <button class="btn" onclick="addItem()">Add</button>
   </div>
 
@@ -80,11 +131,55 @@
   }
 
   function skip() {
-    post('/api/admin/skip', {}).then(j => setStatus(j.ok ? 'Skipped.' : 'Error.'));
+    post('/api/admin/skip', {}).then(j => {
+      if (j.ok) location.reload();
+      else setStatus('Error.');
+    });
   }
 
   function clearQueue() {
-    post('/api/admin/clear_queue', {}).then(j => setStatus(j.ok ? 'Queue cleared.' : 'Error.'));
+    post('/api/admin/clear_queue', {}).then(j => {
+      if (j.ok) location.reload();
+      else setStatus('Error.');
+    });
+  }
+
+  function removeFromQueue(queue_id) {
+    post('/api/admin/queue_remove', {queue_id}).then(j => {
+      if (j.ok) location.reload();
+      else setStatus('Error: ' + (j.error || 'unknown'));
+    });
+  }
+
+  function promote(queue_id) {
+    post('/api/admin/queue_promote', {queue_id}).then(j => {
+      if (j.ok) location.reload();
+      else setStatus('Error: ' + (j.error || 'unknown'));
+    });
+  }
+
+  function tvPause() {
+    post('/api/admin/tv_pause', {}).then(j => j.ok ? location.reload() : setStatus('Error.'));
+  }
+  function tvResume() {
+    post('/api/admin/tv_resume', {}).then(j => j.ok ? location.reload() : setStatus('Error.'));
+  }
+  function tvStop() {
+    post('/api/admin/tv_stop', {}).then(j => j.ok ? location.reload() : setStatus('Error.'));
+  }
+
+  function tvMute() {
+    post('/api/admin/tv_mute', {}).then(j => j.ok ? location.reload() : setStatus('Error.'));
+  }
+  function tvUnmute() {
+    post('/api/admin/tv_unmute', {}).then(j => j.ok ? location.reload() : setStatus('Error.'));
+  }
+
+  function mediaScan() {
+    post('/api/admin/media_scan', {}).then(j => {
+      if (j.ok) location.reload();
+      else setStatus('Error: ' + (j.error || 'unknown'));
+    });
   }
 </script>
 {% endblock %}

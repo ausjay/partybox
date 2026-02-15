@@ -17,11 +17,26 @@
   </div>
 
   <div class="msgbox">
-    <input id="note" placeholder="Optional message (e.g. Happy birthday Juan!)" maxlength="120" />
+    <input id="note" placeholder="Optional message (e.g. Happy birthday Ju)" maxlength="120" />
   </div>
 
-  <div style="margin-top:18px; font-size:16px; opacity:0.9;">Queue</div>
-  <div id="queue" style="margin-top:10px; opacity:0.9;"></div>
+  <h2>Queue</h2>
+  <div class="list">
+    {% if queue|length == 0 %}
+      <div class="muted">Queue is empty.</div>
+    {% else %}
+      {% for q in queue %}
+        <div class="listrow {% if q.status == 'playing' %}playing{% endif %}">
+          <div class="grow">
+            <div class="title">
+              {% if q.status == 'playing' %}▶{% else %}{{ loop.index }}.{% endif %}
+              {{ q.title }}
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    {% endif %}
+  </div>
 
   <div id="status" class="status"></div>
 </div>
@@ -29,33 +44,6 @@
 
 {% block scripts %}
 <script>
-  function renderQueue(items) {
-    const el = document.getElementById('queue');
-    if (!items || !items.length) {
-      el.textContent = '(empty)';
-      return;
-    }
-    el.innerHTML = items.slice(0, 15).map((it, idx) => {
-      const tag = (it.status === 'playing') ? '▶' : (idx+1) + '.';
-      return `<div style="padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.06);">
-        <span style="display:inline-block; width:28px; opacity:0.85;">${tag}</span>
-        <span>${escapeHtml(it.title || '')}</span>
-        ${it.note_text ? `<span style="opacity:0.75;"> — ${escapeHtml(it.note_text)}</span>` : ``}
-      </div>`;
-    }).join('');
-  }
-
-  function escapeHtml(s) {
-    return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  }
-
-  function refreshQueue() {
-    fetch('/api/queue', { cache: 'no-store' })
-      .then(r => r.json())
-      .then(j => renderQueue(j.items || []))
-      .catch(() => { document.getElementById('queue').textContent = '(queue unavailable)'; });
-  }
-
   function requestVideo(catalogId, title) {
     const note = document.getElementById('note').value || '';
     fetch('/api/request_video', {
@@ -67,7 +55,8 @@
       if (j.ok) {
         s.textContent = `Queued: ${title}`;
         document.getElementById('note').value = '';
-        refreshQueue();
+        // simplest: reload to update queue list
+        setTimeout(() => location.reload(), 250);
       } else {
         s.textContent = `Error: ${j.error || 'unknown'}`;
       }
@@ -75,8 +64,26 @@
       document.getElementById('status').textContent = 'Network error';
     });
   }
-
-  refreshQueue();
-  setInterval(refreshQueue, 3000);
 </script>
+<script>
+let lastSig = "";
+
+async function pollQueue() {
+  try {
+    const r = await fetch('/api/queue', {cache:'no-store'});
+    const j = await r.json();
+    const sig = JSON.stringify((j.items||[]).map(x => [x.id, x.status, x.pos]));
+
+    if (lastSig && sig !== lastSig) {
+      location.reload();
+    }
+
+    lastSig = sig;
+  } catch (_) {}
+}
+
+setInterval(pollQueue, 3000);
+pollQueue();
+</script>
+
 {% endblock %}

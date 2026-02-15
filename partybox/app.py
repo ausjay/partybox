@@ -3,14 +3,103 @@ from __future__ import annotations
 
 import os
 import re
-from pathlib import Path
 from typing import Any, Dict
 
-from flask import Flask, jsonify, render_template, request, redirect, url_for, send_from_directory, abort
+from flask import Flask, jsonify, render_template, request, redirect, url_for, abort, send_from_directory
+from pathlib import Path
 
 from . import db as DB
 
 YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,}$")
+
+
+def _sync_local_media() -> Dict[str, Any]:
+    """
+    Scan data/media for .mp4 files and ensure each has a catalog entry:
+      youtube_id = file:<filename>
+      title      = filename sans extension (unless already exists in DB)
+
+    ALSO:
+      - disable catalog entries whose local file is missing
+      - remove queued items whose local file is missing
+    """
+    media_dir = os.getenv("PARTYBOX_MEDIA_DIR", "")
+    if media_dir:
+        media_dir = os.path.abspath(media_dir)
+    else:
+        media_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "media"))
+
+    os.makedirs(media_dir, exist_ok=True)
+    base = Path(media_dir)
+
+    added = 0
+    seen = 0
+
+    # Track which local tokens exist on disk
+    existing_tokens = set()
+
+    for name in sorted(os.listdir(media_dir)):
+        if not name.lower().endswith(".mp4"):
+            continue
+        if ".." in name or name.startswith("/"):
+            continue
+
+        p = base / name
+        if not p.is_file():
+            continue
+
+        seen += 1
+        youtube_id = f"file:{name}"
+        existing_tokens.add(youtube_id)
+
+        title = os.path.splitext(name)[0]
+        if DB.upsert_catalog_item(title=title, youtube_id=youtube_id):
+            added += 1
+
+    # Disable catalog items whose file is missing
+    disabled = 0
+    for it in DB.list_catalog(enabled_only=False):
+        yid = (it.get("youtube_id") or "").strip()
+        if not yid.startswith("file:"):
+            continue
+        if yid in existing_tokens:
+            continue
+        try:
+            DB.set_catalog_enabled(int(it["id"]), False)
+            disabled += 1
+        except Exception:
+            pass
+
+    # Remove queued items whose file is missing
+    removed_from_queue = 0
+    for q in DB.list_queue(limit=1000):
+        yid = (q.get("youtube_id") or "").strip()
+        if not yid.startswith("file:"):
+            continue
+        if yid in existing_tokens:
+            continue
+        try:
+            DB.remove_from_queue(int(q["id"]))
+            removed_from_queue += 1
+        except Exception:
+            pass
+
+    return {
+        "media_dir": media_dir,
+        "seen_mp4": seen,
+        "added": added,
+        "disabled_missing": disabled,
+        "queue_removed_missing": removed_from_queue,
+    }
+
+
+
+def _is_local_token(yid: str) -> bool:
+    return (yid or "").startswith("file:")
+
+
+def _local_filename(yid: str) -> str:
+    return (yid or "")[5:].strip()
 
 
 def create_app() -> Flask:
@@ -19,38 +108,18 @@ def create_app() -> Flask:
     DB.init_db()
     DB.seed_if_empty()
 
-    def _sync_local_media() -> Dict[str, Any]:
-        """
-        Scan data/media for .mp4 files and ensure each has a catalog entry:
-          youtube_id = file:<filename>
-          title      = filename sans extension
-        """
-        media_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "media"))
-        os.makedirs(media_dir, exist_ok=True)
+    # Optional: after restart, default to PAUSED so TV does not autoplay.
+    # Override with PARTYBOX_START_PAUSED=0 if you want autoplay again.
+    if os.getenv("PARTYBOX_START_PAUSED", "1") == "1":
+        DB.set_setting("tv_paused", "1")
 
-        added = 0
-        seen = 0
-        for name in sorted(os.listdir(media_dir)):
-            if not name.lower().endswith(".mp4"):
-                continue
-            if ".." in name or name.startswith("/"):
-                continue
-
-            seen += 1
-            youtube_id = f"file:{name}"
-            title = os.path.splitext(name)[0]
-            if DB.upsert_catalog_item(title=title, youtube_id=youtube_id):
-                added += 1
-
-        return {"media_dir": media_dir, "seen_mp4": seen, "added": added}
-
-    # optional auto scan on service start
+    # Auto-scan media on service start if enabled
     if os.getenv("PARTYBOX_AUTO_MEDIA_SCAN", "0") == "1":
         try:
             r = _sync_local_media()
-            print(f"[partybox] media auto-scan ok: seen={r['seen_mp4']} added={r['added']} dir={r['media_dir']}", flush=True)
+            print(f"[partybox] media auto-scan ok: seen={r['seen_mp4']} added={r['added']} dir={r['media_dir']}")
         except Exception as e:
-            print(f"[partybox] media auto-scan FAILED: {e}", flush=True)
+            print(f"[partybox] media auto-scan FAILED: {e}")
 
     @app.get("/")
     def index():
@@ -58,17 +127,15 @@ def create_app() -> Flask:
 
     @app.get("/media/<path:filename>")
     def media(filename: str):
-        # Configurable media directory (default: ../data/media)
-        media_dir = os.getenv("PARTYBOX_MEDIA_DIR", "").strip()
+        media_dir = os.getenv("PARTYBOX_MEDIA_DIR", "")
         if media_dir:
             media_dir = os.path.abspath(media_dir)
         else:
             media_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "media"))
 
         base = Path(media_dir)
-
-        # Tight path safety: only allow a single file name (no subdirs)
         name = Path(filename).name
+
         if not name or name.startswith(".") or ".." in filename or filename.startswith("/"):
             abort(400)
 
@@ -76,7 +143,7 @@ def create_app() -> Flask:
         if exact.is_file():
             return send_from_directory(str(base), name, conditional=True)
 
-        # Case-insensitive fallback
+        # case-insensitive fallback
         try:
             target_lower = name.lower()
             for f in base.iterdir():
@@ -95,8 +162,9 @@ def create_app() -> Flask:
     @app.get("/u")
     def user():
         items = DB.list_catalog(enabled_only=True)
+        q = DB.list_queue(limit=50)
         locked = DB.get_setting("requests_locked", "0") == "1"
-        return render_template("user.html", items=items, locked=locked)
+        return render_template("user.html", items=items, locked=locked, queue=q)
 
     @app.get("/admin")
     def admin():
@@ -104,27 +172,65 @@ def create_app() -> Flask:
         key = request.args.get("key", "")
         if key != admin_key:
             return "nope", 403
+
         items = DB.list_catalog(enabled_only=False)
+        q = DB.list_queue(limit=50)
         locked = DB.get_setting("requests_locked", "0") == "1"
-        return render_template("admin.html", items=items, locked=locked, key=key)
+        paused = DB.get_setting("tv_paused", "0") == "1"
+        muted = DB.get_setting("tv_muted", "0") == "1"
+
+        return render_template("admin.html", items=items, locked=locked, paused=paused, muted=muted, queue=q, key=key)
 
     # ---------- APIs ----------
     @app.get("/api/state")
     def api_state():
         locked = DB.get_setting("requests_locked", "0") == "1"
+        paused = DB.get_setting("tv_paused", "0") == "1"
+        muted = DB.get_setting("tv_muted", "0") == "1"
 
-        nxt = DB.peek_next()
-        if nxt:
+        now = DB.get_now_playing()
+        up = DB.peek_next()
+
+        if now:
+            payload = {
+                "locked": locked,
+                "paused": paused,
+                "muted": muted,
+                "mode": "playing",
+                "now": {
+                    "queue_id": int(now["id"]),
+                    "title": now["title"],
+                    "youtube_id": now["youtube_id"],
+                    "note_text": now.get("note_text") or "",
+                },
+                "up_next": (
+                    {
+                        "queue_id": int(up["id"]),
+                        "title": up["title"],
+                        "youtube_id": up["youtube_id"],
+                        "note_text": up.get("note_text") or "",
+                    }
+                    if up
+                    else None
+                ),
+            }
+            return jsonify(payload)
+
+        if up:
+            # nothing marked playing yet -> treat next as now (TV will mark_playing on start)
             return jsonify(
                 {
                     "locked": locked,
+                    "paused": paused,
+                    "muted": muted,
                     "mode": "queue",
-                    "next": {
-                        "queue_id": int(nxt["id"]),
-                        "title": nxt["title"],
-                        "youtube_id": nxt["youtube_id"],
-                        "note_text": nxt.get("note_text") or "",
+                    "now": {
+                        "queue_id": int(up["id"]),
+                        "title": up["title"],
+                        "youtube_id": up["youtube_id"],
+                        "note_text": up.get("note_text") or "",
                     },
+                    "up_next": None,
                 }
             )
 
@@ -133,21 +239,26 @@ def create_app() -> Flask:
             return jsonify(
                 {
                     "locked": locked,
+                    "paused": paused,
+                    "muted": muted,
                     "mode": "idle",
-                    "next": {
+                    "now": {
                         "queue_id": None,
                         "title": idle["title"],
                         "youtube_id": idle["youtube_id"],
                         "note_text": "",
                     },
+                    "up_next": None,
                 }
             )
 
-        return jsonify({"locked": locked, "mode": "empty", "next": None})
+        return jsonify(
+            {"locked": locked, "paused": paused, "muted": muted, "mode": "empty", "now": None, "up_next": None}
+        )
 
     @app.get("/api/queue")
     def api_queue():
-        items = DB.list_queue(limit=25)
+        items = DB.list_queue(limit=100)
         return jsonify({"items": items})
 
     @app.post("/api/admin/media_scan")
@@ -156,7 +267,6 @@ def create_app() -> Flask:
         key = request.args.get("key", "")
         if key != admin_key:
             return jsonify({"ok": False, "error": "forbidden"}), 403
-
         result = _sync_local_media()
         return jsonify({"ok": True, **result})
 
@@ -202,11 +312,16 @@ def create_app() -> Flask:
 
         data = request.get_json(force=True, silent=True) or {}
         raw = (data.get("youtube") or data.get("youtube_id") or "").strip()
+
         if not raw:
             return jsonify({"ok": False, "error": "missing youtube url or id"}), 400
 
-        # --- Local file mode ---
-        media_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "media"))
+        # Local file mode
+        media_dir = os.getenv("PARTYBOX_MEDIA_DIR", "")
+        if media_dir:
+            media_dir = os.path.abspath(media_dir)
+        else:
+            media_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "media"))
 
         def _exists_in_media(fn: str) -> bool:
             if not fn or ".." in fn or fn.startswith("/"):
@@ -224,8 +339,9 @@ def create_app() -> Flask:
             DB.add_catalog_item(title, youtube_id)
             return jsonify({"ok": True, "title": title, "youtube_id": youtube_id})
 
-        # --- YouTube mode (kept, but TV will ignore unless PARTYBOX_ALLOW_YOUTUBE=1) ---
+        # YouTube mode (legacy)
         youtube_id = raw
+
         if "youtube.com" in raw or "youtu.be" in raw:
             m = re.search(r"youtu\.be/([A-Za-z0-9_-]{6,})", raw)
             if not m:
@@ -285,6 +401,82 @@ def create_app() -> Flask:
         if key != admin_key:
             return jsonify({"ok": False, "error": "forbidden"}), 403
         DB.clear_queue()
+        return jsonify({"ok": True})
+
+    @app.post("/api/admin/queue_remove")
+    def api_admin_queue_remove():
+        admin_key = DB.get_setting("admin_key", "JBOX")
+        key = request.args.get("key", "")
+        if key != admin_key:
+            return jsonify({"ok": False, "error": "forbidden"}), 403
+        data = request.get_json(force=True, silent=True) or {}
+        qid = int(data.get("queue_id", 0))
+        if qid <= 0:
+            return jsonify({"ok": False, "error": "bad queue_id"}), 400
+        DB.remove_from_queue(qid)
+        return jsonify({"ok": True})
+
+    @app.post("/api/admin/queue_promote")
+    def api_admin_queue_promote():
+        admin_key = DB.get_setting("admin_key", "JBOX")
+        key = request.args.get("key", "")
+        if key != admin_key:
+            return jsonify({"ok": False, "error": "forbidden"}), 403
+        data = request.get_json(force=True, silent=True) or {}
+        qid = int(data.get("queue_id", 0))
+        if qid <= 0:
+            return jsonify({"ok": False, "error": "bad queue_id"}), 400
+        DB.promote_queue(qid)
+        return jsonify({"ok": True})
+
+    @app.post("/api/admin/tv_pause")
+    def api_admin_tv_pause():
+        admin_key = DB.get_setting("admin_key", "JBOX")
+        key = request.args.get("key", "")
+        if key != admin_key:
+            return jsonify({"ok": False, "error": "forbidden"}), 403
+        DB.set_setting("tv_paused", "1")
+        return jsonify({"ok": True})
+
+    @app.post("/api/admin/tv_resume")
+    def api_admin_tv_resume():
+        admin_key = DB.get_setting("admin_key", "JBOX")
+        key = request.args.get("key", "")
+        if key != admin_key:
+            return jsonify({"ok": False, "error": "forbidden"}), 403
+        DB.set_setting("tv_paused", "0")
+        return jsonify({"ok": True})
+
+    @app.post("/api/admin/tv_stop")
+    def api_admin_tv_stop():
+        """
+        "Stop" = pause TV AND clear queue (so it doesn't immediately start again).
+        """
+        admin_key = DB.get_setting("admin_key", "JBOX")
+        key = request.args.get("key", "")
+        if key != admin_key:
+            return jsonify({"ok": False, "error": "forbidden"}), 403
+        DB.set_setting("tv_paused", "1")
+        DB.clear_queue()
+        return jsonify({"ok": True})
+
+    # NEW: mute toggle (default should be NOT muted)
+    @app.post("/api/admin/tv_mute")
+    def api_admin_tv_mute():
+        admin_key = DB.get_setting("admin_key", "JBOX")
+        key = request.args.get("key", "")
+        if key != admin_key:
+            return jsonify({"ok": False, "error": "forbidden"}), 403
+        DB.set_setting("tv_muted", "1")
+        return jsonify({"ok": True})
+
+    @app.post("/api/admin/tv_unmute")
+    def api_admin_tv_unmute():
+        admin_key = DB.get_setting("admin_key", "JBOX")
+        key = request.args.get("key", "")
+        if key != admin_key:
+            return jsonify({"ok": False, "error": "forbidden"}), 403
+        DB.set_setting("tv_muted", "0")
         return jsonify({"ok": True})
 
     return app
