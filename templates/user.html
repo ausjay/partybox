@@ -1,7 +1,27 @@
 {% extends "base.html" %}
+{% block title %}Pick a Video — PartyBox{% endblock %}
 {% block body %}
+
 <div class="page">
   <h1>Pick Next Video</h1>
+  <div id="spotify_overlay" style="display:none; padding:16px; margin:12px 0; border-radius:12px; border:1px solid rgba(255,255,255,0.12); background: rgba(20,20,24,0.55);">
+    <div style="font-size:28px; font-weight:700;">Spotify Time</div>
+    <div style="margin-top:8px;">Open Spotify → Devices → select: <b>UJ-Partybox</b></div>
+    <div style="margin-top:8px; opacity:0.8;">Partybox requests are paused until Admin switches back.</div>
+  </div>
+  <script>
+  (async function(){
+    try {
+      const r = await fetch('/api/state', {cache:'no-store'});
+      const j = await r.json();
+      const av = (j.av_mode || 'partybox').toLowerCase();
+      if (av === 'spotify') {
+        document.getElementById('spotify_overlay').style.display = 'block';
+        document.querySelectorAll('button.card').forEach(b => b.disabled = true);
+      }
+    } catch (_) {}
+  })();
+  </script>
 
   {% if locked %}
     <div class="banner warn">Requests are currently locked by admin.</div>

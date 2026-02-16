@@ -3,27 +3,56 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PartyBox TV</title>
+  <title>PartyBox TV — PartyBox</title>
   <style>
     html, body { margin:0; padding:0; background:#000; height:100%; overflow:hidden; }
-    #wrap { position:relative; width:100%; height:100%; }
-    #vid { width:100%; height:100%; object-fit:contain; background:#000; }
-    #msg {
-      position:absolute; left:0; right:0; top:0;
-      padding:16px 20px;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      color:#fff;
-      background: linear-gradient(rgba(0,0,0,0.65), rgba(0,0,0,0));
-      font-size: 18px;
-      text-shadow: 0 2px 10px rgba(0,0,0,0.9);
-    }
-    #note {
-      position:absolute; left:0; right:0; bottom:0;
+    #wrap { position:relative; width:100%; height:100%; display:flex; flex-direction:column; }
+    #top {
       padding:18px 22px;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       color:#fff;
-      background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.65));
+      background: linear-gradient(rgba(0,0,0,0.72), rgba(0,0,0,0));
       font-size: 22px;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.9);
+    }
+    #main {
+      flex:1;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+      color:#fff;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      text-shadow: 0 2px 10px rgba(0,0,0,0.9);
+    }
+    .card {
+      max-width: 980px;
+      width: 100%;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 16px;
+      padding: 22px;
+      background: rgba(20,20,24,0.55);
+    }
+    .h1 { font-size: 44px; margin: 0 0 10px 0; }
+    .h2 { font-size: 26px; margin: 0 0 10px 0; opacity: 0.95; }
+    .p  { font-size: 22px; margin: 10px 0; opacity: 0.95; line-height: 1.25; }
+    .muted { opacity: 0.72; }
+    .pill {
+      display:inline-block;
+      padding:6px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(0,0,0,0.25);
+      font-size: 16px;
+      margin-left: 10px;
+      vertical-align: middle;
+    }
+    #note {
+      padding:18px 22px;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      color:#fff;
+      background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.72));
+      font-size: 24px;
       display:none;
       text-shadow: 0 2px 10px rgba(0,0,0,0.9);
     }
@@ -31,52 +60,32 @@
 </head>
 <body>
 <div id="wrap">
-  <video id="vid" playsinline autoplay></video>
-  <div id="msg">PartyBox TV — waiting…</div>
+  <div id="top">PartyBox TV <span id="modepill" class="pill">…</span></div>
+
+  <div id="main">
+    <div class="card">
+      <div id="title" class="h1">Loading…</div>
+      <div id="line1" class="h2 muted"></div>
+      <div id="line2" class="p"></div>
+      <div id="line3" class="p muted"></div>
+    </div>
+  </div>
+
   <div id="note"></div>
 </div>
 
 <script>
-const vid  = document.getElementById("vid");
-const msg  = document.getElementById("msg");
-const note = document.getElementById("note");
+const modepill = document.getElementById("modepill");
+const title = document.getElementById("title");
+const line1 = document.getElementById("line1");
+const line2 = document.getElementById("line2");
+const line3 = document.getElementById("line3");
+const note  = document.getElementById("note");
 
-let playingLock = null;   // { youtube_id, queue_id|null, mode }
-let lastState = null;
-
-function isLocalToken(yid) {
-  return (yid || "").startsWith("file:");
-}
-function localFilenameFromToken(yid) {
-  return (yid || "").slice("file:".length).trim();
-}
-
-async function api(path, opts={}) {
-  const r = await fetch(path, Object.assign({cache:"no-store"}, opts));
-  if (!r.ok) throw new Error(`${path} -> ${r.status}`);
+async function apiState() {
+  const r = await fetch("/api/state", {cache:"no-store"});
+  if (!r.ok) throw new Error(`/api/state -> ${r.status}`);
   return await r.json();
-}
-
-function setBanner(state) {
-  const now = state.now;
-  const up  = state.up_next;
-
-  if (state.paused) {
-    msg.textContent = now ? `PAUSED — ${now.title}` : "PAUSED — PartyBox TV";
-    return;
-  }
-
-  if (!now) {
-    msg.textContent = "PartyBox TV — no videos available";
-    return;
-  }
-
-  if (state.mode === "playing" || state.mode === "queue") {
-    if (up && up.title) msg.textContent = `Now: ${now.title}   •   Up next: ${up.title}`;
-    else msg.textContent = `Now: ${now.title}`;
-  } else {
-    msg.textContent = `Idle: ${now.title}`;
-  }
 }
 
 function setNote(text) {
@@ -89,133 +98,61 @@ function setNote(text) {
   }
 }
 
-function forceStopAndUnlock() {
-  try { vid.pause(); } catch (_) {}
-  try { vid.removeAttribute("src"); vid.load(); } catch (_) {}
-  playingLock = null;
-}
-
-async function tryStartLocal(state) {
-  const now = state.now;
-  const fn  = localFilenameFromToken(now.youtube_id);
-  const src = `/media/${encodeURIComponent(fn)}`;
-
-  vid.src = src;
-  vid.load();
-
-  const desiredMuted = !!state.muted;
-  vid.muted = desiredMuted;
-
-  const p = vid.play();
-  if (p) {
-    p.catch(() => {
-      if (!desiredMuted) {
-        vid.muted = true;
-        vid.play().catch(()=>{});
-      }
-    });
-  }
-
-  // mark playing if queue item
-  if ((state.mode === "queue" || state.mode === "playing") && now.queue_id) {
-    fetch("/api/tv/mark_playing", {
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({queue_id: now.queue_id})
-    }).catch(()=>{});
-  }
-}
-
-async function skipYouTubeIfQueued(state) {
-  const now = state.now;
-  msg.textContent = `Cannot play YouTube item here — skipping: ${now.title}`;
+function renderSpotify(state) {
+  modepill.textContent = "Spotify Mode";
+  title.textContent = "Spotify Time";
+  line1.textContent = "Anyone can connect (simple Spotify Connect).";
+  line2.textContent = "Open Spotify → Devices → select: UJ-Partybox";
+  line3.textContent = "This stays active until Admin switches back to Partybox.";
   setNote("");
+}
 
-  if (now.queue_id) {
-    await fetch("/api/tv/mark_done", {
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({queue_id: now.queue_id})
-    }).catch(()=>{});
+function renderPartybox(state) {
+  modepill.textContent = "Partybox Mode";
+
+  if (state.paused) {
+    title.textContent = "PAUSED";
+    line1.textContent = state.now ? `Now: ${state.now.title}` : "No selection";
+    line2.textContent = "Admin paused playback.";
+    line3.textContent = "";
+    setNote("");
+    return;
   }
+
+  if (!state.now) {
+    title.textContent = "Idle";
+    line1.textContent = "No videos available.";
+    line2.textContent = "Add items in /admin or request from /u";
+    line3.textContent = "";
+    setNote("");
+    return;
+  }
+
+  const now = state.now;
+  const up  = state.up_next;
+
+  title.textContent = "Now Playing";
+  line1.textContent = now.title || "Unknown";
+  line2.textContent = up && up.title ? `Up Next: ${up.title}` : "";
+  line3.textContent = state.mode ? `Mode: ${state.mode}` : "";
+  setNote(now.note_text || "");
 }
 
 async function poll() {
   try {
-    const state = await api("/api/state");
-    lastState = state;
-
-    // Pause behavior
-    if (state.paused) {
-      setBanner(state);
-      setNote("");
-      if (!vid.paused) vid.pause();
-      return;
-    }
-
-    // Nothing to do
-    if (!state.now) {
-      setBanner(state);
-      setNote("");
-      if (!vid.paused) vid.pause();
-      return;
-    }
-
-    setBanner(state);
-    setNote(state.now.note_text || "");
-
-    // NEW: if admin skipped/changed "now", break the lock immediately
-    if (playingLock && state.now) {
-      const serverQid = state.now.queue_id || null;
-      const serverYid = state.now.youtube_id || "";
-      const lockQid   = playingLock.queue_id || null;
-      const lockYid   = playingLock.youtube_id || "";
-
-      const serverAdvanced =
-        (lockQid && serverQid && serverQid !== lockQid) ||
-        (!lockQid && serverQid) ||
-        (serverYid && lockYid && serverYid !== lockYid);
-
-      if (serverAdvanced) {
-        forceStopAndUnlock();
-      }
-    }
-
-    // LOCK: if a video is currently playing, do NOT switch until it ends.
-    if (playingLock && !vid.paused && !vid.ended) {
-      return;
-    }
-
-    const now = state.now;
-
-    // New lock target
-    playingLock = { youtube_id: now.youtube_id, queue_id: now.queue_id || null, mode: state.mode };
-
-    if (isLocalToken(now.youtube_id)) {
-      await tryStartLocal(state);
-      return;
-    }
-
-    await skipYouTubeIfQueued(state);
-
+    const state = await apiState();
+    const av = (state.av_mode || "partybox").toLowerCase();
+    if (av === "spotify") renderSpotify(state);
+    else renderPartybox(state);
   } catch (e) {
-    msg.textContent = `TV error: ${e}`;
+    modepill.textContent = "error";
+    title.textContent = "TV error";
+    line1.textContent = String(e);
+    line2.textContent = "";
+    line3.textContent = "";
+    setNote("");
   }
 }
-
-vid.addEventListener("ended", async () => {
-  try {
-    if (playingLock && playingLock.queue_id) {
-      await fetch("/api/tv/mark_done", {
-        method:"POST",
-        headers:{ "Content-Type":"application/json" },
-        body: JSON.stringify({queue_id: playingLock.queue_id})
-      });
-    }
-  } catch (_) {}
-
-  playingLock = null;
-});
 
 setInterval(poll, 1000);
 poll();

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}PartyBox Admin{% endblock %}
+{% block title %}Admin — PartyBox{% endblock %}
 {% block body %}
 <div class="page">
   <h1>Admin</h1>
@@ -22,6 +22,11 @@
     {% endif %}
 
     <button class="btn danger" onclick="tvStop()">Stop (pause + clear)</button>
+  </div>
+
+  <div class="row" style="margin-top:10px;">
+    <button class="btn" onclick="avMode('partybox')">Partybox Mode</button>
+    <button class="btn" onclick="avMode('spotify')">Spotify Mode</button>
   </div>
 
   <h2>Queue</h2>
@@ -158,25 +163,22 @@
     });
   }
 
-  function tvPause() {
-    post('/api/admin/tv_pause', {}).then(j => j.ok ? location.reload() : setStatus('Error.'));
-  }
-  function tvResume() {
-    post('/api/admin/tv_resume', {}).then(j => j.ok ? location.reload() : setStatus('Error.'));
-  }
-  function tvStop() {
-    post('/api/admin/tv_stop', {}).then(j => j.ok ? location.reload() : setStatus('Error.'));
-  }
+  function tvPause() { post('/api/admin/tv_pause', {}).then(j => j.ok ? location.reload() : setStatus('Error.')); }
+  function tvResume(){ post('/api/admin/tv_resume', {}).then(j => j.ok ? location.reload() : setStatus('Error.')); }
+  function tvStop()  { post('/api/admin/tv_stop', {}).then(j => j.ok ? location.reload() : setStatus('Error.')); }
 
-  function tvMute() {
-    post('/api/admin/tv_mute', {}).then(j => j.ok ? location.reload() : setStatus('Error.'));
-  }
-  function tvUnmute() {
-    post('/api/admin/tv_unmute', {}).then(j => j.ok ? location.reload() : setStatus('Error.'));
-  }
+  function tvMute()  { post('/api/admin/tv_mute', {}).then(j => j.ok ? location.reload() : setStatus('Error.')); }
+  function tvUnmute(){ post('/api/admin/tv_unmute', {}).then(j => j.ok ? location.reload() : setStatus('Error.')); }
 
   function mediaScan() {
     post('/api/admin/media_scan', {}).then(j => {
+      if (j.ok) location.reload();
+      else setStatus('Error: ' + (j.error || 'unknown'));
+    });
+  }
+
+  function avMode(mode) {
+    post('/api/admin/av_mode', {mode}).then(j => {
       if (j.ok) location.reload();
       else setStatus('Error: ' + (j.error || 'unknown'));
     });
