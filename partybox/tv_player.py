@@ -2,43 +2,54 @@
 # =============================================================================
 # PartyBox TV Player (mpv)
 #
-# - Polls the local Flask API (/api/state) for the next item (queue or idle)
-# - Plays YouTube videos fullscreen via mpv using yt-dlp
+# - Polls the local Flask API (/api/state) for what to play
+# - Plays local media (file:*.mp4) and YouTube (id or URL) via mpv/yt-dlp
 # - Marks queue items playing/done via /api/tv/mark_playing and /api/tv/mark_done
 #
-# Notes:
-# - This avoids YouTube iframe "embed blocked" + autoplay/sound restrictions.
-# - Designed to run on the TV box (Pi now, NUC later).
+# RULES:
+# - If av_mode=spotify -> do nothing (leave HDMI alone; Spotify Connect only)
+# - If paused=true     -> do nothing (TV status page can show PAUSED)
+# - Only queue items get mark_playing/mark_done.
+# - If paused/spotify flips ON while mpv is running -> stop mpv.
 # =============================================================================
 
 from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 import time
 import urllib.request
+from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-API_BASE = os.getenv("PARTYBOX_API", "http://127.0.0.1:5000")
+API_BASE = os.getenv("PARTYBOX_API", "http://127.0.0.1:5000").rstrip("/")
 POLL_SECONDS = float(os.getenv("PARTYBOX_POLL_SECONDS", "1.0"))
+
 MPV_BIN = os.getenv("MPV_BIN", "mpv")
 
-# mpv args: fullscreen, stay on top, no OSD spam
-MPV_ARGS = [
+DEFAULT_MEDIA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "media"))
+MEDIA_DIR = os.path.abspath(os.getenv("PARTYBOX_MEDIA_DIR", DEFAULT_MEDIA_DIR))
+
+EXTRA_MPV_ARGS = shlex.split(os.getenv("PARTYBOX_MPV_ARGS", "").strip()) if os.getenv("PARTYBOX_MPV_ARGS") else []
+
+BASE_MPV_ARGS = [
     "--fs",
-    "--ontop",
     "--no-border",
+    "--ontop",
     "--cursor-autohide=always",
     "--force-window=yes",
     "--keep-open=no",
     "--really-quiet",
-    # Better A/V stability on small devices
     "--hwdec=auto-safe",
-    # Helps when yt-dlp is used under the hood by mpv
     "--ytdl=yes",
     "--ytdl-format=bestvideo+bestaudio/best",
 ]
+
+
+def log(msg: str) -> None:
+    print(msg, flush=True)
 
 
 def http_json(url: str, method: str = "GET", payload: Optional[dict] = None) -> Dict[str, Any]:
@@ -54,10 +65,6 @@ def http_json(url: str, method: str = "GET", payload: Optional[dict] = None) -> 
         return json.loads(raw)
 
 
-def youtube_watch_url(youtube_id: str) -> str:
-    return f"https://www.youtube.com/watch?v={youtube_id}"
-
-
 def mark_playing(queue_id: int) -> None:
     http_json(f"{API_BASE}/api/tv/mark_playing", method="POST", payload={"queue_id": queue_id})
 
@@ -70,70 +77,163 @@ def get_state() -> Dict[str, Any]:
     return http_json(f"{API_BASE}/api/state")
 
 
-def pick_next(state: Dict[str, Any]) -> Tuple[str, Optional[int], Optional[str], Optional[str]]:
-    """
-    Returns (mode, queue_id, youtube_id, title)
-    mode in {"queue","idle","empty"}
-    """
-    mode = state.get("mode") or "empty"
-    nxt = state.get("next") or None
-    if not nxt:
-        return ("empty", None, None, None)
-    qid = nxt.get("queue_id", None)
-    yid = nxt.get("youtube_id", None)
-    title = nxt.get("title", None)
-    return (mode, int(qid) if qid else None, str(yid) if yid else None, str(title) if title else None)
+def is_local_token(youtube_id: str) -> bool:
+    return (youtube_id or "").startswith("file:")
 
 
-def play_with_mpv(url: str) -> int:
-    cmd = [MPV_BIN, *MPV_ARGS, url]
-    # mpv return code is not always meaningful; we treat "finished" as done either way
-    proc = subprocess.run(cmd)
-    return int(proc.returncode)
+def local_path_from_token(youtube_id: str) -> Optional[str]:
+    name = (youtube_id or "")[5:].strip()
+    if not name:
+        return None
+
+    safe_name = Path(name).name
+    if safe_name != name:
+        return None
+
+    p = os.path.abspath(os.path.join(MEDIA_DIR, safe_name))
+    if not p.startswith(MEDIA_DIR + os.sep):
+        return None
+    if not os.path.isfile(p):
+        return None
+    return p
+
+
+def youtube_or_url(youtube_id: str) -> str:
+    y = (youtube_id or "").strip()
+    if not y:
+        return ""
+    if "://" in y:
+        return y
+    return f"https://www.youtube.com/watch?v={y}"
+
+
+def pick_item_from_state(state: Dict[str, Any]) -> Tuple[Optional[str], Optional[int], Optional[str], str]:
+    av_mode = (state.get("av_mode") or "partybox").lower()
+    if av_mode == "spotify":
+        return (None, None, None, "spotify")
+
+    if bool(state.get("paused", False)):
+        return (None, None, None, "paused")
+
+    now = state.get("now") or None
+    if not now:
+        return (None, None, None, "empty")
+
+    youtube_id = now.get("youtube_id") or ""
+    title = now.get("title") or ""
+    mode = str(state.get("mode") or "unknown")
+
+    qid = now.get("queue_id", None)
+    queue_id: Optional[int] = None
+    try:
+        if qid is not None:
+            queue_id = int(qid)
+    except Exception:
+        queue_id = None
+
+    return (str(youtube_id), queue_id, str(title), mode)
+
+
+def start_mpv(target: str) -> subprocess.Popen:
+    cmd = [MPV_BIN, *BASE_MPV_ARGS, *EXTRA_MPV_ARGS, target]
+    return subprocess.Popen(cmd)
+
+
+def stop_mpv(proc: subprocess.Popen) -> None:
+    try:
+        proc.terminate()
+    except Exception:
+        return
+    for _ in range(10):
+        if proc.poll() is not None:
+            return
+        time.sleep(0.1)
+    try:
+        proc.kill()
+    except Exception:
+        pass
 
 
 def main() -> None:
-    last_key = None  # (mode, queue_id, youtube_id)
+    last_key: Optional[Tuple[str, Optional[int]]] = None
+    last_mode: Optional[str] = None
+
+    log(f"[tv_player] starting. API_BASE={API_BASE} MEDIA_DIR={MEDIA_DIR}")
+
     while True:
         try:
             state = get_state()
-            mode, queue_id, youtube_id, title = pick_next(state)
+            youtube_id, queue_id, title, mode = pick_item_from_state(state)
 
-            key = (mode, queue_id, youtube_id)
-            if mode == "empty" or not youtube_id:
+            # Log mode transitions (so service isn't "silent")
+            if mode != last_mode:
+                last_mode = mode
+                log(f"[tv_player] state: mode={mode} av_mode={state.get('av_mode')} paused={state.get('paused')}")
+
+            if not youtube_id:
                 last_key = None
                 time.sleep(POLL_SECONDS)
                 continue
 
-            # If the same item is still "next", don't restart playback.
+            key = (youtube_id, queue_id)
             if key == last_key:
                 time.sleep(POLL_SECONDS)
                 continue
-
             last_key = key
-            url = youtube_watch_url(youtube_id)
 
-            if mode == "queue" and queue_id:
+            # Determine mpv target
+            if is_local_token(youtube_id):
+                local_path = local_path_from_token(youtube_id)
+                if not local_path:
+                    log(f"[tv_player] local missing/invalid: {youtube_id}")
+                    time.sleep(0.5)
+                    continue
+                target = local_path
+            else:
+                target = youtube_or_url(youtube_id)
+                if not target:
+                    time.sleep(0.5)
+                    continue
+
+            is_queue_item = (queue_id is not None and queue_id > 0 and mode in ("queue", "playing"))
+
+            if is_queue_item:
                 try:
                     mark_playing(queue_id)
-                except Exception:
-                    pass
+                except Exception as e:
+                    log(f"[tv_player] warn: mark_playing failed: {e}")
 
-            print(f"[tv_player] playing: {title or youtube_id} ({mode})")
-            rc = play_with_mpv(url)
-            print(f"[tv_player] mpv exit rc={rc}")
+            log(f"[tv_player] playing: {title or youtube_id} ({mode})")
+            proc = start_mpv(target)
 
-            if mode == "queue" and queue_id:
+            while proc.poll() is None:
+                time.sleep(0.5)
                 try:
-                    mark_done(queue_id)
+                    s2 = get_state()
+                    if bool(s2.get("paused", False)) or (str(s2.get("av_mode") or "").lower() == "spotify"):
+                        log("[tv_player] stopping mpv due to paused/spotify flip")
+                        stop_mpv(proc)
+                        break
                 except Exception:
                     pass
 
-            # short breathe so we don't thrash
+            rc = proc.poll()
+            if rc is None:
+                stop_mpv(proc)
+                rc = proc.poll()
+
+            log(f"[tv_player] mpv exit rc={int(rc) if rc is not None else -1}")
+
+            if is_queue_item:
+                try:
+                    mark_done(queue_id)  # type: ignore[arg-type]
+                except Exception as e:
+                    log(f"[tv_player] warn: mark_done failed: {e}")
+
             time.sleep(0.2)
 
         except Exception as e:
-            print(f"[tv_player] error: {e}")
+            log(f"[tv_player] error: {e}")
             time.sleep(1.0)
 
 

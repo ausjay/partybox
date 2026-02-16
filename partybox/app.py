@@ -129,6 +129,14 @@ def create_app() -> Flask:
         except Exception as e:
             print(f"[partybox] media auto-scan FAILED: {e}")
 
+    def _bool_setting(name: str, default: str = "0") -> bool:
+        """
+        Be tolerant: if something ever wrote 'true'/'on' into settings,
+        we still behave correctly.
+        """
+        v = (DB.get_setting(name, default) or "").strip().lower()
+        return v in ("1", "true", "yes", "y", "on")
+
     # ---------- Pages ----------
     @app.get("/")
     def index():
@@ -141,18 +149,20 @@ def create_app() -> Flask:
     @app.get("/u")
     def user():
         items = DB.list_catalog(enabled_only=True)
-        q = DB.list_queue(limit=50)
-        locked = DB.get_setting("requests_locked", "0") == "1"
-        return render_template("user.html", items=items, locked=locked, queue=q)
+        queue = DB.list_queue(limit=50)
+        locked = (DB.get_setting("requests_locked", "0") or "0").strip().lower() in ("1", "true", "yes", "on")
+        av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
+        return render_template("user.html", items=items, locked=locked, queue=queue, av_mode=av_mode)
+
 
     @app.get("/admin")
     def admin():
         key = _admin_or_403()
         items = DB.list_catalog(enabled_only=False)
         q = DB.list_queue(limit=50)
-        locked = DB.get_setting("requests_locked", "0") == "1"
-        paused = DB.get_setting("tv_paused", "0") == "1"
-        muted = DB.get_setting("tv_muted", "0") == "1"
+        locked = _bool_setting("requests_locked", "0")
+        paused = _bool_setting("tv_paused", "0")
+        muted = _bool_setting("tv_muted", "0")
         av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
 
         return render_template(
@@ -192,62 +202,25 @@ def create_app() -> Flask:
     # ---------- APIs ----------
     @app.get("/api/state")
     def api_state():
-        locked = DB.get_setting("requests_locked", "0") == "1"
-        paused = DB.get_setting("tv_paused", "0") == "1"
-        muted = DB.get_setting("tv_muted", "0") == "1"
-        av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").lower()
+        locked = _bool_setting("requests_locked", "0")
+        paused = _bool_setting("tv_paused", "0")
+        muted = _bool_setting("tv_muted", "0")
+        av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
 
         now = DB.get_now_playing()
         up = DB.peek_next()
 
+        def _pack(qrow: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                "queue_id": int(qrow["id"]),
+                "title": qrow["title"],
+                "youtube_id": qrow["youtube_id"],
+                "note_text": qrow.get("note_text") or "",
+            }
+
         # IMPORTANT: When paused, do NOT rotate through idle picks.
         # Only show: currently-playing item, or next queued item, else nothing.
         if paused:
-            if now:
-                return jsonify(
-                    {
-                        "locked": locked,
-                        "paused": True,
-                        "muted": muted,
-                        "av_mode": av_mode,
-                        "mode": "paused",
-                        "now": {
-                            "queue_id": int(now["id"]),
-                            "title": now["title"],
-                            "youtube_id": now["youtube_id"],
-                            "note_text": now.get("note_text") or "",
-                        },
-                        "up_next": (
-                            {
-                                "queue_id": int(up["id"]),
-                                "title": up["title"],
-                                "youtube_id": up["youtube_id"],
-                                "note_text": up.get("note_text") or "",
-                            }
-                            if up
-                            else None
-                        ),
-                    }
-                )
-
-            if up:
-                return jsonify(
-                    {
-                        "locked": locked,
-                        "paused": True,
-                        "muted": muted,
-                        "av_mode": av_mode,
-                        "mode": "paused",
-                        "now": {
-                            "queue_id": int(up["id"]),
-                            "title": up["title"],
-                            "youtube_id": up["youtube_id"],
-                            "note_text": up.get("note_text") or "",
-                        },
-                        "up_next": None,
-                    }
-                )
-
             return jsonify(
                 {
                     "locked": locked,
@@ -255,8 +228,8 @@ def create_app() -> Flask:
                     "muted": muted,
                     "av_mode": av_mode,
                     "mode": "paused",
-                    "now": None,
-                    "up_next": None,
+                    "now": _pack(now) if now else (_pack(up) if up else None),
+                    "up_next": _pack(up) if (now and up) else None,
                 }
             )
 
@@ -269,22 +242,8 @@ def create_app() -> Flask:
                     "muted": muted,
                     "av_mode": av_mode,
                     "mode": "playing",
-                    "now": {
-                        "queue_id": int(now["id"]),
-                        "title": now["title"],
-                        "youtube_id": now["youtube_id"],
-                        "note_text": now.get("note_text") or "",
-                    },
-                    "up_next": (
-                        {
-                            "queue_id": int(up["id"]),
-                            "title": up["title"],
-                            "youtube_id": up["youtube_id"],
-                            "note_text": up.get("note_text") or "",
-                        }
-                        if up
-                        else None
-                    ),
+                    "now": _pack(now),
+                    "up_next": _pack(up) if up else None,
                 }
             )
 
@@ -297,12 +256,7 @@ def create_app() -> Flask:
                     "muted": muted,
                     "av_mode": av_mode,
                     "mode": "queue",
-                    "now": {
-                        "queue_id": int(up["id"]),
-                        "title": up["title"],
-                        "youtube_id": up["youtube_id"],
-                        "note_text": up.get("note_text") or "",
-                    },
+                    "now": _pack(up),
                     "up_next": None,
                 }
             )
@@ -338,7 +292,6 @@ def create_app() -> Flask:
             }
         )
 
-
     @app.get("/api/queue")
     def api_queue():
         items = DB.list_queue(limit=100)
@@ -368,7 +321,7 @@ def create_app() -> Flask:
         if av_mode == "spotify":
             return jsonify({"ok": False, "error": "spotify mode"}), 409
 
-        if DB.get_setting("requests_locked", "0") == "1":
+        if _bool_setting("requests_locked", "0"):
             return jsonify({"ok": False, "error": "requests locked"}), 403
 
         data = request.get_json(force=True, silent=True) or {}
@@ -551,4 +504,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
