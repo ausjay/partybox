@@ -4,32 +4,22 @@
 
 <div class="page">
   <h1>Pick Next Video</h1>
+
+  <!-- Spotify overlay (JS toggles this) -->
   <div id="spotify_overlay" style="display:none; padding:16px; margin:12px 0; border-radius:12px; border:1px solid rgba(255,255,255,0.12); background: rgba(20,20,24,0.55);">
     <div style="font-size:28px; font-weight:700;">Spotify Time</div>
     <div style="margin-top:8px;">Open Spotify → Devices → select: <b>UJ-Partybox</b></div>
     <div style="margin-top:8px; opacity:0.8;">Partybox requests are paused until Admin switches back.</div>
   </div>
-  <script>
-  (async function(){
-    try {
-      const r = await fetch('/api/state', {cache:'no-store'});
-      const j = await r.json();
-      const av = (j.av_mode || 'partybox').toLowerCase();
-      if (av === 'spotify') {
-        document.getElementById('spotify_overlay').style.display = 'block';
-        document.querySelectorAll('button.card').forEach(b => b.disabled = true);
-      }
-    } catch (_) {}
-  })();
-  </script>
 
-  {% if locked %}
-    <div class="banner warn">Requests are currently locked by admin.</div>
-  {% endif %}
+  <!-- Lock banner (always present so JS can toggle it) -->
+  <div id="locked_banner" class="banner warn" style="display:none;">
+    Requests are currently locked by admin.
+  </div>
 
   <div class="grid">
     {% for it in items %}
-      <button class="card" onclick="requestVideo({{ it.id }}, '{{ it.title|e }}')" {% if locked %}disabled{% endif %}>
+      <button class="card" onclick='requestVideo({{ it.id }}, {{ it.title|tojson }})'>
         <div class="title">{{ it.title }}</div>
         <div class="sub">Tap to add to queue</div>
       </button>
@@ -75,7 +65,6 @@
       if (j.ok) {
         s.textContent = `Queued: ${title}`;
         document.getElementById('note').value = '';
-        // simplest: reload to update queue list
         setTimeout(() => location.reload(), 250);
       } else {
         s.textContent = `Error: ${j.error || 'unknown'}`;
@@ -85,25 +74,74 @@
     });
   }
 </script>
+
 <script>
-let lastSig = "";
+  // ---- Live state/queue refresh ----
+  let lastQueueSig = "";
+  let lastStateSig = "";
 
-async function pollQueue() {
-  try {
-    const r = await fetch('/api/queue', {cache:'no-store'});
-    const j = await r.json();
-    const sig = JSON.stringify((j.items||[]).map(x => [x.id, x.status, x.pos]));
+  function setButtonsDisabled(disabled) {
+    document.querySelectorAll('button.card').forEach(b => { b.disabled = !!disabled; });
+  }
 
-    if (lastSig && sig !== lastSig) {
-      location.reload();
-    }
+  function applyStateUI(state) {
+    const av = (state.av_mode || 'partybox').toLowerCase();
+    const locked = !!state.locked;
 
-    lastSig = sig;
-  } catch (_) {}
-}
+    // Show/hide spotify overlay
+    const so = document.getElementById('spotify_overlay');
+    so.style.display = (av === 'spotify') ? 'block' : 'none';
 
-setInterval(pollQueue, 3000);
-pollQueue();
+    // Show/hide locked banner
+    const lb = document.getElementById('locked_banner');
+    lb.style.display = locked ? 'block' : 'none';
+
+    // Disable buttons if locked OR spotify mode
+    setButtonsDisabled(locked || av === 'spotify');
+  }
+
+  async function pollState() {
+    try {
+      const r = await fetch('/api/state', {cache:'no-store'});
+      const s = await r.json();
+
+      // Trigger a hard refresh if admin flips anything that affects /u
+      const sig = JSON.stringify([
+        (s.av_mode || 'partybox'),
+        !!s.locked,
+        !!s.paused,
+        !!s.muted,
+        (s.mode || '')
+      ]);
+
+      applyStateUI(s);
+
+      if (lastStateSig && sig !== lastStateSig) {
+        location.reload();
+        return;
+      }
+      lastStateSig = sig;
+    } catch (_) {}
+  }
+
+  async function pollQueue() {
+    try {
+      const r = await fetch('/api/queue', {cache:'no-store'});
+      const j = await r.json();
+
+      const sig = JSON.stringify((j.items||[]).map(x => [x.id, x.status, x.pos]));
+      if (lastQueueSig && sig !== lastQueueSig) {
+        location.reload();
+        return;
+      }
+      lastQueueSig = sig;
+    } catch (_) {}
+  }
+
+  // Start quickly, then keep checking
+  pollState();
+  pollQueue();
+  setInterval(pollState, 2000);
+  setInterval(pollQueue, 3000);
 </script>
-
 {% endblock %}
