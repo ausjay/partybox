@@ -6,6 +6,7 @@ import re
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
+from urllib.parse import urlparse
 
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_from_directory, url_for
 
@@ -104,6 +105,44 @@ def _sync_local_media() -> Dict[str, Any]:
     }
 
 
+def _is_youtube_url(s: str) -> bool:
+    """
+    True if s looks like a YouTube URL we can hand directly to mpv/ytdl.
+    """
+    if "://" not in s:
+        return False
+    try:
+        u = urlparse(s)
+        host = (u.netloc or "").lower()
+        if host.startswith("www."):
+            host = host[4:]
+        return host in ("youtube.com", "youtu.be") or host.endswith(".youtube.com")
+    except Exception:
+        return False
+
+
+def _extract_youtube_id_from_url(raw: str) -> Optional[str]:
+    """
+    Best-effort extraction for common forms:
+      - https://youtu.be/<id>
+      - https://www.youtube.com/watch?v=<id>
+      - https://www.youtube.com/shorts/<id>
+    Returns id or None if not found.
+    """
+    s = (raw or "").strip()
+    if not s:
+        return None
+
+    m = re.search(r"youtu\.be/([A-Za-z0-9_-]{6,})", s)
+    if not m:
+        m = re.search(r"[?&]v=([A-Za-z0-9_-]{6,})", s)
+    if not m:
+        m = re.search(r"youtube\.com/shorts/([A-Za-z0-9_-]{6,})", s)
+    if m:
+        return m.group(1)
+    return None
+
+
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="../static", template_folder="../templates")
 
@@ -153,7 +192,6 @@ def create_app() -> Flask:
         locked = (DB.get_setting("requests_locked", "0") or "0").strip().lower() in ("1", "true", "yes", "on")
         av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
         return render_template("user.html", items=items, locked=locked, queue=queue, av_mode=av_mode)
-
 
     @app.get("/admin")
     def admin():
@@ -386,23 +424,31 @@ def create_app() -> Flask:
             DB.add_catalog_item(title, youtube_id)
             return jsonify({"ok": True, "title": title, "youtube_id": youtube_id})
 
-        # YouTube mode (legacy)
-        youtube_id = raw
-        if "youtube.com" in raw or "youtu.be" in raw:
-            m = re.search(r"youtu\.be/([A-Za-z0-9_-]{6,})", raw)
-            if not m:
-                m = re.search(r"[?&]v=([A-Za-z0-9_-]{6,})", raw)
-            if not m:
-                m = re.search(r"youtube\.com/shorts/([A-Za-z0-9_-]{6,})", raw)
-            if m:
-                youtube_id = m.group(1)
+        # YouTube mode (Option 1):
+        # - If we can extract an ID from the URL, store the ID (clean + dedupe)
+        # - If we cannot extract an ID (playlist/share edge cases), store the FULL URL
+        #   and let mpv/ytdl handle it.
+        youtube_token = raw
+        extracted = _extract_youtube_id_from_url(raw)
+        if extracted:
+            youtube_token = extracted
 
-        if not youtube_id or not YOUTUBE_ID_RE.match(youtube_id):
-            return jsonify({"ok": False, "error": "bad youtube id"}), 400
+        # Validate
+        if "://" in youtube_token:
+            # Must be a YouTube URL to accept as a direct target
+            if not _is_youtube_url(youtube_token):
+                return jsonify({"ok": False, "error": "bad youtube url"}), 400
+        else:
+            # Must be an ID-like token
+            if not youtube_token or not YOUTUBE_ID_RE.match(youtube_token):
+                return jsonify({"ok": False, "error": "bad youtube id"}), 400
 
-        title = (data.get("title") or "").strip() or f"YouTube {youtube_id}"
-        DB.add_catalog_item(title, youtube_id)
-        return jsonify({"ok": True, "title": title, "youtube_id": youtube_id})
+        title = (data.get("title") or "").strip()
+        if not title:
+            title = f"YouTube {youtube_token}" if "://" not in youtube_token else "YouTube Video"
+
+        DB.add_catalog_item(title, youtube_token)
+        return jsonify({"ok": True, "title": title, "youtube_id": youtube_token})
 
     @app.post("/api/admin/catalog_enable")
     def api_catalog_enable():

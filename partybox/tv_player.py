@@ -11,6 +11,9 @@
 # - If paused=true     -> do nothing (TV status page can show PAUSED)
 # - Only queue items get mark_playing/mark_done.
 # - If paused/spotify flips ON while mpv is running -> stop mpv.
+#
+# HEARTBEAT:
+# - Posts /api/tv/heartbeat every few seconds so Admin can show if TV agent is alive.
 # =============================================================================
 
 from __future__ import annotations
@@ -63,6 +66,22 @@ def http_json(url: str, method: str = "GET", payload: Optional[dict] = None) -> 
     with urllib.request.urlopen(req, timeout=6) as resp:
         raw = resp.read().decode("utf-8", "replace")
         return json.loads(raw)
+
+
+def post_heartbeat(mode: str, title: str = "", youtube_id: str = "") -> None:
+    try:
+        http_json(
+            f"{API_BASE}/api/tv/heartbeat",
+            method="POST",
+            payload={
+                "mode": mode,
+                "title": title[:120],
+                "youtube_id": youtube_id[:200],
+            },
+        )
+    except Exception:
+        # heartbeat should never kill playback loop
+        pass
 
 
 def mark_playing(queue_id: int) -> None:
@@ -158,12 +177,21 @@ def main() -> None:
     last_key: Optional[Tuple[str, Optional[int]]] = None
     last_mode: Optional[str] = None
 
+    hb_last = 0.0
+    HB_EVERY = float(os.getenv("PARTYBOX_HEARTBEAT_SECONDS", "3.0"))
+
     log(f"[tv_player] starting. API_BASE={API_BASE} MEDIA_DIR={MEDIA_DIR}")
 
     while True:
         try:
             state = get_state()
             youtube_id, queue_id, title, mode = pick_item_from_state(state)
+
+            # Heartbeat (always)
+            now_ts = time.time()
+            if now_ts - hb_last >= HB_EVERY:
+                hb_last = now_ts
+                post_heartbeat(mode=mode, title=title or "", youtube_id=youtube_id or "")
 
             # Log mode transitions (so service isn't "silent")
             if mode != last_mode:
@@ -208,6 +236,13 @@ def main() -> None:
 
             while proc.poll() is None:
                 time.sleep(0.5)
+
+                # Keep heartbeat alive during playback too
+                now_ts = time.time()
+                if now_ts - hb_last >= HB_EVERY:
+                    hb_last = now_ts
+                    post_heartbeat(mode="playing", title=title or "", youtube_id=youtube_id or "")
+
                 try:
                     s2 = get_state()
                     if bool(s2.get("paused", False)) or (str(s2.get("av_mode") or "").lower() == "spotify"):
