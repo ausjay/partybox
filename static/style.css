@@ -300,6 +300,21 @@ p { margin: 0; }
   font-size: 13px;
 }
 
+.btn.icon {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn.icon svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
 .btnGroup {
   display: flex;
   gap: 10px;

@@ -505,6 +505,18 @@ def create_app() -> Flask:
         DB.set_catalog_enabled(item_id, enabled)
         return jsonify({"ok": True})
 
+    @app.post("/api/admin/catalog_delete")
+    def api_catalog_delete():
+        _admin_or_403()
+
+        data = request.get_json(force=True, silent=True) or {}
+        item_id = int(data.get("id", 0))
+        if item_id <= 0:
+            return jsonify({"ok": False, "error": "bad id"}), 400
+
+        deleted = DB.delete_catalog_item(item_id)
+        return jsonify({"ok": True, "deleted": deleted})
+
     @app.post("/api/admin/lock")
     def api_admin_lock():
         _admin_or_403()

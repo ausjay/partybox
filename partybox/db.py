@@ -151,6 +151,20 @@ def set_catalog_enabled(item_id: int, enabled: bool) -> None:
         conn.commit()
 
 
+def delete_catalog_item(item_id: int) -> int:
+    """
+    Hard-delete a catalog item and remove any queue entries referencing it.
+    Returns number of catalog rows deleted (0 or 1).
+    """
+    with _connect() as conn:
+        conn.execute("DELETE FROM queue WHERE catalog_id=?", (item_id,))
+        cur = conn.execute("DELETE FROM catalog WHERE id=?", (item_id,))
+        conn.commit()
+    # Normalize queue positions after deletions.
+    normalize_queue_positions()
+    return int(cur.rowcount)
+
+
 # ---------------- Queue ----------------
 
 def _next_pos(conn: sqlite3.Connection) -> int:

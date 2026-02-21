@@ -1,187 +1,684 @@
+{# templates/admin.html #}
 {% extends "base.html" %}
+{% block base_scripts %}{% endblock %}
 {% block title %}Admin — PartyBox{% endblock %}
+
 {% block body %}
-<div class="page">
-  <h1>Admin</h1>
+<div class="appBg">
+  <div class="page">
 
-  <div class="row">
-    <button class="btn" onclick="skip()">Skip</button>
-    <button class="btn" onclick="clearQueue()">Clear Queue</button>
-    <button class="btn" onclick="toggleLock()">{{ "Unlock Requests" if locked else "Lock Requests" }}</button>
-
-    {% if paused %}
-      <button class="btn" onclick="tvResume()">Resume TV</button>
-    {% else %}
-      <button class="btn" onclick="tvPause()">Pause TV</button>
-    {% endif %}
-
-    {% if muted %}
-      <button class="btn" onclick="tvUnmute()">Unmute</button>
-    {% else %}
-      <button class="btn" onclick="tvMute()">Mute</button>
-    {% endif %}
-
-    <button class="btn danger" onclick="tvStop()">Stop (pause + clear)</button>
-  </div>
-
-  <div class="row" style="margin-top:10px;">
-    <button class="btn" onclick="avMode('partybox')">Partybox Mode</button>
-    <button class="btn" onclick="avMode('spotify')">Spotify Mode</button>
-  </div>
-
-  <h2>Queue</h2>
-  <div class="list">
-    {% if queue|length == 0 %}
-      <div class="muted">Queue is empty.</div>
-    {% else %}
-      {% for q in queue %}
-        <div class="listrow {% if q.status == 'playing' %}playing{% endif %}">
-          <div class="grow">
-            <div class="title">
-              {% if q.status == 'playing' %}▶{% else %}{{ loop.index }}.{% endif %}
-              {{ q.title }}
-            </div>
-            <div class="sub">
-              {% if q.youtube_id.startswith("file:") %}
-                Local: {{ q.youtube_id[5:] }}
-              {% else %}
-                YT: {{ q.youtube_id }}
-              {% endif %}
-              {% if q.note_text %} • Note: {{ q.note_text }}{% endif %}
-            </div>
-          </div>
-
-          {% if q.status == 'queued' %}
-            <button class="btn" onclick="promote({{ q.id }})">Promote</button>
-          {% endif %}
-          <button class="btn danger" onclick="removeFromQueue({{ q.id }})">Remove</button>
+    <!-- Top Bar -->
+    <div class="topbar">
+      <div class="brandRow">
+        <div class="brandIcon"></div>
+        <div class="brandText">
+          <div class="headline">PartyBox Admin</div>
+          <div class="tagline">Command Center • touch-friendly • dark neon</div>
         </div>
-      {% endfor %}
-    {% endif %}
-  </div>
-
-  <div class="row" style="margin-top:10px;">
-    <button class="btn" onclick="mediaScan()">Media Scan</button>
-  </div>
-
-  <h2>Catalog</h2>
-  <div class="row">
-    <input id="title" placeholder="Title" />
-    <input id="youtube_id" placeholder="Paste YouTube URL (or ID) OR Local.mp4" />
-    <button class="btn" onclick="addItem()">Add</button>
-  </div>
-
-  <div class="list">
-    {% for it in items %}
-      <div class="listrow">
-        <div class="grow">
-          <div class="title">{{ it.title }}</div>
-          <div class="sub">
-            {% if it.youtube_id.startswith("file:") %}
-              Local: {{ it.youtube_id[5:] }}
-            {% else %}
-              YT: {{ it.youtube_id }}
-            {% endif %}
-            {% if it.enabled == 0 %}<span class="muted">(disabled)</span>{% endif %}
-          </div>
-        </div>
-        <button class="btn" onclick="setEnabled({{ it.id }}, {{ 0 if it.enabled else 1 }})">
-          {{ "Disable" if it.enabled else "Enable" }}
-        </button>
       </div>
-    {% endfor %}
-  </div>
 
-  <div id="status" class="status"></div>
-</div>
+      <div class="topActions">
+        <div class="pill">
+          <span class="dot ok"></span>
+          <span>System Online</span>
+        </div>
+
+        <div class="pill" title="A/V Mode (partybox vs spotify)">
+          <span id="top_av_dot" class="dot {% if av_mode == 'spotify' %}warn{% else %}ok{% endif %}"></span>
+          <span>Mode: <b id="top_av_text" style="font-weight:800;">{{ 'Spotify' if av_mode == 'spotify' else 'PartyBox' }}</b></span>
+        </div>
+
+        <div class="pill" title="Requests lock">
+          <span id="top_lock_dot" class="dot {% if locked %}bad{% else %}ok{% endif %}"></span>
+          <span id="top_lock_text">{% if locked %}<b style="font-weight:800;">Requests Locked</b>{% else %}Requests Open{% endif %}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Layout -->
+    <div class="grid">
+
+      <!-- Left: Now Playing + Controls -->
+      <div class="panel" style="grid-column: span 6;">
+        <div class="panelHeader">
+          <div class="kicker">Now Playing</div>
+          <div class="hint" id="now_header_hint">
+            {% if paused %}
+              <span class="badge paused">Paused</span>
+            {% else %}
+              <span class="badge playing">Live</span>
+            {% endif %}
+            {% if muted %}
+              <span class="badge">Muted</span>
+            {% endif %}
+          </div>
+        </div>
+
+        <div class="panelInner">
+          <!-- Now Playing Card (JS will keep this live) -->
+          <div class="card" id="now_card">
+            {% set now = (queue|selectattr("status","equalto","playing")|list|first) %}
+            {% if now %}
+              <div class="title ellip" id="now_title">{{ now.title }}</div>
+              <div class="sub ellip" id="now_sub">
+                {% if now.youtube_id.startswith("file:") %}
+                  Local: {{ now.youtube_id[5:] }}
+                {% else %}
+                  YT: {{ now.youtube_id }}
+                {% endif %}
+                {% if now.note_text %} • Note: {{ now.note_text }}{% endif %}
+              </div>
+
+              <div class="kv" id="now_kv">
+                <div class="k">Playback</div>
+                <div class="v" id="kv_playback">{% if paused %}Paused{% else %}Playing{% endif %}{% if muted %} • Muted{% endif %}</div>
+
+                <div class="k">Requests</div>
+                <div class="v" id="kv_requests">{% if locked %}Locked{% else %}Open{% endif %}</div>
+
+                <div class="k">A/V Mode</div>
+                <div class="v" id="kv_av">{{ 'Spotify' if av_mode == 'spotify' else 'PartyBox' }}</div>
+              </div>
+            {% else %}
+              <div class="title" id="now_title">Nothing marked playing</div>
+              <div class="sub" id="now_sub">Queue item will appear here when playback starts (or when TV marks playing).</div>
+              <div class="kv" id="now_kv" style="display:none;"></div>
+            {% endif %}
+          </div>
+
+          <div style="height:12px;"></div>
+
+          <!-- Control Sections -->
+          <div class="panel" style="background: transparent; border: none; box-shadow: none;">
+            <div class="panelHeader" style="padding: 0 0 10px; border-bottom: none;">
+              <div class="kicker">Playback Control</div>
+              <div class="hint">Big buttons for bar screen</div>
+            </div>
+
+            <div class="btnGroup">
+              <button id="btn_pause_resume" class="btn {% if paused %}primary{% else %}pink{% endif %}" onclick="togglePauseResume()">
+                {% if paused %}Resume{% else %}Pause{% endif %}
+              </button>
+
+              <button class="btn ghost" onclick="skip()">Skip</button>
+
+              <button class="btn danger" onclick="tvStop()">Stop (pause + clear)</button>
+            </div>
+
+            <div style="height:12px;"></div>
+
+            <div class="panelHeader" style="padding: 0 0 10px; border-bottom: none;">
+              <div class="kicker">Audio</div>
+              <div class="hint">Mute affects PartyBox output</div>
+            </div>
+
+            <div class="btnGroup">
+              <button id="btn_mute" class="btn {% if muted %}primary{% else %}ghost{% endif %}" onclick="toggleMute()">
+                {% if muted %}Unmute{% else %}Mute{% endif %}
+              </button>
+
+              <button id="btn_av_partybox" class="btn {% if av_mode != 'spotify' %}primary{% else %}ghost{% endif %}" onclick="avMode('partybox')">PartyBox Mode</button>
+              <button id="btn_av_spotify" class="btn {% if av_mode == 'spotify' %}primary{% else %}ghost{% endif %}" onclick="avMode('spotify')">Spotify Mode</button>
+            </div>
+
+            <div style="height:12px;"></div>
+
+            <div class="panelHeader" style="padding: 0 0 10px; border-bottom: none;">
+              <div class="kicker">Requests & Queue</div>
+              <div class="hint">Lock requests during “Spotify mode” or chaos</div>
+            </div>
+
+            <div class="btnGroup">
+              <button id="btn_lock" class="btn {% if locked %}primary{% else %}ghost{% endif %}" onclick="toggleLock()">
+                {{ "Unlock Requests" if locked else "Lock Requests" }}
+              </button>
+
+              <button class="btn ghost" onclick="clearQueue()">Clear Queue</button>
+            </div>
+
+            <div id="status" class="status"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: Queue (LIVE) -->
+      <div class="panel" style="grid-column: span 6;">
+        <div class="panelHeader">
+          <div class="kicker">Queue</div>
+          <div class="hint"><span id="queue_count">{{ queue|length }}</span> item(s)</div>
+        </div>
+
+        <div class="panelInner">
+          <div id="queue_empty_card" class="card" style="{% if queue|length == 0 %}display:block;{% else %}display:none;{% endif %}">
+            <div class="title">Queue is empty</div>
+            <div class="sub">Add items or allow users to request.</div>
+          </div>
+
+          <div id="queue_list" class="list" style="{% if queue|length == 0 %}display:none;{% else %}display:flex; flex-direction:column; gap:10px;{% endif %}">
+            {% for q in queue %}
+              <div class="listrow {% if q.status == 'playing' %}playing{% endif %}" data-queue-id="{{ q.id }}">
+                <div class="grow">
+                  <div class="title ellip">
+                    {% if q.status == 'playing' %}
+                      ▶ {{ q.title }}
+                      <span class="badge playing" style="margin-left:10px;">playing</span>
+                    {% else %}
+                      {{ loop.index }}. {{ q.title }}
+                    {% endif %}
+                  </div>
+
+                  <div class="sub ellip">
+                    {% if q.youtube_id.startswith("file:") %}
+                      Local: {{ q.youtube_id[5:] }}
+                    {% else %}
+                      YT: {{ q.youtube_id }}
+                    {% endif %}
+                    {% if q.note_text %} • Note: {{ q.note_text }}{% endif %}
+                  </div>
+                </div>
+
+                {% if q.status == 'queued' %}
+                  <button class="btn small ghost" onclick="promote({{ q.id }})">Promote</button>
+                {% endif %}
+                <button class="btn small danger" onclick="removeFromQueue({{ q.id }})">Remove</button>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Catalog Add -->
+      <div class="panel" style="grid-column: span 6;">
+        <div class="panelHeader">
+          <div class="kicker">Add to Catalog</div>
+          <div class="hint">YouTube URL/ID or Local.mp4</div>
+        </div>
+
+        <div class="panelInner">
+          <div class="row" style="margin:0;">
+            <input class="input" id="title" placeholder="Title (optional for local files)" />
+            <input class="input" id="youtube_id" placeholder="YouTube URL / ID OR Local.mp4" />
+            <button class="btn primary" onclick="addItem()">Add</button>
+          </div>
+
+          <div style="height:10px;"></div>
+
+          <div class="btnGroup">
+            <button class="btn ghost" onclick="mediaScan()">Media Scan</button>
+          </div>
+
+          <div class="muted" style="margin-top:10px;">
+            Tip: Local files must already exist in <code style="color:rgba(234,246,255,0.85)">data/media</code>.
+          </div>
+        </div>
+      </div>
+
+      <!-- Catalog List (instant enable/disable UI) -->
+      <div class="panel" style="grid-column: span 6;">
+        <div class="panelHeader">
+          <div class="kicker">Catalog</div>
+          <div class="hint"><span id="catalog_count">{{ items|length }}</span> item(s)</div>
+        </div>
+
+        <div class="panelInner">
+          <div class="list" id="catalog_list">
+            {% for it in items %}
+              <div class="listrow" data-catalog-id="{{ it.id }}" data-enabled="{{ 1 if it.enabled else 0 }}">
+                <div class="grow">
+                  <div class="title ellip">{{ it.title }}</div>
+                  <div class="sub ellip">
+                    {% if it.youtube_id.startswith("file:") %}
+                      Local: {{ it.youtube_id[5:] }}
+                    {% else %}
+                      YT: {{ it.youtube_id }}
+                    {% endif %}
+                    <span class="badge locked" data-disabled-badge style="{% if it.enabled == 0 %}margin-left:8px; display:inline-flex;{% else %}display:none;{% endif %}">disabled</span>
+                  </div>
+                </div>
+
+                <div class="btnGroup">
+                  <button
+                    class="btn small {% if it.enabled %}ghost{% else %}primary{% endif %}"
+                    data-enable-btn
+                    onclick="setEnabled({{ it.id }}, {{ 0 if it.enabled else 1 }})">
+                    {{ "Disable" if it.enabled else "Enable" }}
+                  </button>
+                  <button class="btn small danger icon" title="Delete from catalog" onclick="deleteCatalog({{ it.id }})">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M4 7h16M9 7V5h6v2M9 10v7M12 10v7M15 10v7M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+    </div> <!-- /grid -->
+
+  </div> <!-- /page -->
+</div> <!-- /appBg -->
 {% endblock %}
 
 {% block scripts %}
 <script>
   const KEY = "{{ key|e }}";
-  let locked = {{ "true" if locked else "false" }};
+
+  // local ui cache
+  let STATE = {
+    locked: {{ "true" if locked else "false" }},
+    paused: {{ "true" if paused else "false" }},
+    muted: {{ "true" if muted else "false" }},
+    av_mode: "{{ av_mode|e }}"
+  };
 
   function post(path, body) {
     return fetch(path + `?key=${encodeURIComponent(KEY)}`, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify(body || {})
-    }).then(r => r.json());
+    }).then(async (r) => {
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const msg = j.error || `HTTP ${r.status}`;
+        throw new Error(msg);
+      }
+      return j;
+    });
   }
 
-  function setStatus(t) { document.getElementById('status').textContent = t; }
+  function setStatus(t) {
+    const el = document.getElementById('status');
+    if (el) el.textContent = t || "";
+  }
 
+  // ---------- Live UI helpers ----------
+  function setTopLock(locked) {
+    const dot = document.getElementById("top_lock_dot");
+    const txt = document.getElementById("top_lock_text");
+    dot.classList.remove("ok","bad","warn");
+    dot.classList.add(locked ? "bad" : "ok");
+    txt.innerHTML = locked ? "<b style=\"font-weight:800;\">Requests Locked</b>" : "Requests Open";
+    const btn = document.getElementById("btn_lock");
+    btn.className = "btn " + (locked ? "primary" : "ghost");
+    btn.textContent = locked ? "Unlock Requests" : "Lock Requests";
+  }
+
+  function setTopAv(avMode) {
+    const dot = document.getElementById("top_av_dot");
+    const txt = document.getElementById("top_av_text");
+    dot.classList.remove("ok","warn","bad");
+    dot.classList.add(avMode === "spotify" ? "warn" : "ok");
+    txt.textContent = (avMode === "spotify") ? "Spotify" : "PartyBox";
+
+    // highlight the mode buttons
+    const pb = document.getElementById("btn_av_partybox");
+    const sp = document.getElementById("btn_av_spotify");
+    pb.className = "btn " + (avMode === "spotify" ? "ghost" : "primary");
+    sp.className = "btn " + (avMode === "spotify" ? "primary" : "ghost");
+  }
+
+  function setPaused(paused, muted) {
+    const btn = document.getElementById("btn_pause_resume");
+    btn.className = "btn " + (paused ? "primary" : "pink");
+    btn.textContent = paused ? "Resume" : "Pause";
+
+    // Update header badges
+    const hint = document.getElementById("now_header_hint");
+    const parts = [];
+    if (paused) parts.push('<span class="badge paused">Paused</span>');
+    else parts.push('<span class="badge playing">Live</span>');
+    if (muted) parts.push('<span class="badge">Muted</span>');
+    hint.innerHTML = parts.join(" ");
+  }
+
+  function setMuted(muted) {
+    const btn = document.getElementById("btn_mute");
+    btn.className = "btn " + (muted ? "primary" : "ghost");
+    btn.textContent = muted ? "Unmute" : "Mute";
+  }
+
+  function updateNowCardFromState(state) {
+    // This uses /api/state "now" which is stable across tv/user/admin
+    const now = state.now;
+
+    const titleEl = document.getElementById("now_title");
+    const subEl = document.getElementById("now_sub");
+    const kvEl = document.getElementById("now_kv");
+
+    if (!now) {
+      titleEl.textContent = "Nothing playing / queued";
+      subEl.textContent = "Queue item will appear here when playback starts.";
+      kvEl.style.display = "none";
+      return;
+    }
+
+    titleEl.textContent = now.title || "(untitled)";
+
+    const yid = (now.youtube_id || "");
+    const pretty = yid.startsWith("file:") ? ("Local: " + yid.slice(5)) : ("YT: " + yid);
+    const note = (now.note_text || "").trim();
+    subEl.textContent = note ? (pretty + " • Note: " + note) : pretty;
+
+    kvEl.style.display = "grid";
+    const kvPlayback = document.getElementById("kv_playback");
+    const kvRequests = document.getElementById("kv_requests");
+    const kvAv = document.getElementById("kv_av");
+
+    kvPlayback.textContent = (state.paused ? "Paused" : "Playing") + (state.muted ? " • Muted" : "");
+    kvRequests.textContent = state.locked ? "Locked" : "Open";
+    kvAv.textContent = (state.av_mode === "spotify") ? "Spotify" : "PartyBox";
+  }
+
+  function renderQueue(items) {
+    const list = document.getElementById("queue_list");
+    const empty = document.getElementById("queue_empty_card");
+    const cnt = document.getElementById("queue_count");
+
+    items = items || [];
+    cnt.textContent = String(items.length);
+
+    if (!items.length) {
+      empty.style.display = "block";
+      list.style.display = "none";
+      list.innerHTML = "";
+      return;
+    }
+
+    empty.style.display = "none";
+    list.style.display = "flex";
+    list.innerHTML = "";
+
+    items.forEach((q, idx) => {
+      const row = document.createElement("div");
+      row.className = "listrow" + (q.status === "playing" ? " playing" : "");
+      row.dataset.queueId = q.id;
+
+      const left = document.createElement("div");
+      left.className = "grow";
+
+      const t = document.createElement("div");
+      t.className = "title ellip";
+
+      if (q.status === "playing") {
+        t.textContent = "▶ " + (q.title || "(untitled)");
+        const badge = document.createElement("span");
+        badge.className = "badge playing";
+        badge.style.marginLeft = "10px";
+        badge.textContent = "playing";
+        t.appendChild(badge);
+      } else {
+        t.textContent = `${idx + 1}. ${q.title || "(untitled)"}`;
+      }
+
+      const sub = document.createElement("div");
+      sub.className = "sub ellip";
+      const yid = (q.youtube_id || "");
+      const pretty = yid.startsWith("file:") ? ("Local: " + yid.slice(5)) : ("YT: " + yid);
+      const note = (q.note_text || "").trim();
+      sub.textContent = note ? (pretty + " • Note: " + note) : pretty;
+
+      left.appendChild(t);
+      left.appendChild(sub);
+
+      row.appendChild(left);
+
+      if (q.status === "queued") {
+        const promoteBtn = document.createElement("button");
+        promoteBtn.className = "btn small ghost";
+        promoteBtn.textContent = "Promote";
+        promoteBtn.onclick = () => promote(q.id);
+        row.appendChild(promoteBtn);
+      }
+
+      const rmBtn = document.createElement("button");
+      rmBtn.className = "btn small danger";
+      rmBtn.textContent = "Remove";
+      rmBtn.onclick = () => removeFromQueue(q.id);
+      row.appendChild(rmBtn);
+
+      list.appendChild(row);
+    });
+  }
+
+  function updateCatalogRowEnabled(id, enabled) {
+    const row = document.querySelector(`[data-catalog-id="${id}"]`);
+    if (!row) return;
+
+    row.dataset.enabled = enabled ? "1" : "0";
+
+    const badge = row.querySelector(`[data-disabled-badge]`);
+    if (badge) badge.style.display = enabled ? "none" : "inline-flex";
+
+    const btn = row.querySelector(`[data-enable-btn]`);
+    if (btn) {
+      btn.className = "btn small " + (enabled ? "ghost" : "primary");
+      btn.textContent = enabled ? "Disable" : "Enable";
+      btn.setAttribute("onclick", `setEnabled(${id}, ${enabled ? 0 : 1})`);
+    }
+  }
+
+  // ---------- Admin actions ----------
   function addItem() {
     const title = document.getElementById('title').value.trim();
     const youtube_id = document.getElementById('youtube_id').value.trim();
-    post('/api/admin/catalog_add', {title, youtube_id}).then(j => {
-      if (j.ok) location.reload();
-      else setStatus('Error: ' + (j.error || 'unknown'));
-    });
+    setStatus("");
+    post('/api/admin/catalog_add', {title, youtube_id})
+      .then(j => {
+        setStatus("Added.");
+        // simplest: full reload so new item appears in the list
+        location.reload();
+      })
+      .catch(e => setStatus('Error: ' + (e.message || 'unknown')));
   }
 
   function setEnabled(id, enabled) {
-    post('/api/admin/catalog_enable', {id, enabled: !!enabled}).then(j => {
-      if (j.ok) location.reload();
-      else setStatus('Error: ' + (j.error || 'unknown'));
-    });
+    setStatus("");
+    // optimistic UI
+    updateCatalogRowEnabled(id, !!enabled);
+    post('/api/admin/catalog_enable', {id, enabled: !!enabled})
+      .then(j => {
+        setStatus("Saved.");
+        // make sure UI reflects actual result
+        updateCatalogRowEnabled(id, !!enabled);
+      })
+      .catch(e => {
+        // rollback
+        updateCatalogRowEnabled(id, !enabled);
+        setStatus('Error: ' + (e.message || 'unknown'));
+      });
+  }
+
+  function deleteCatalog(id) {
+    if (!confirm("Delete this catalog item? This also removes it from the queue.")) return;
+    setStatus("");
+    post('/api/admin/catalog_delete', {id})
+      .then(j => {
+        if (!j.ok) throw new Error(j.error || "Delete failed");
+        const row = document.querySelector(`[data-catalog-id="${id}"]`);
+        if (row) row.remove();
+        const cnt = document.getElementById("catalog_count");
+        if (cnt) cnt.textContent = String(Math.max(0, Number(cnt.textContent || "0") - 1));
+        setStatus("Deleted.");
+        pollQueue();
+        pollState();
+      })
+      .catch(e => setStatus('Error: ' + (e.message || 'unknown')));
   }
 
   function toggleLock() {
-    locked = !locked;
-    post('/api/admin/lock', {locked}).then(j => {
-      if (j.ok) location.reload();
-      else setStatus('Error: ' + (j.error || 'unknown'));
-    });
+    setStatus("");
+    const next = !STATE.locked;
+    // optimistic
+    STATE.locked = next;
+    setTopLock(next);
+
+    post('/api/admin/lock', {locked: next})
+      .then(() => setStatus(next ? "Requests locked." : "Requests unlocked."))
+      .catch(e => {
+        // rollback
+        STATE.locked = !next;
+        setTopLock(!next);
+        setStatus('Error: ' + (e.message || 'unknown'));
+      });
   }
 
   function skip() {
-    post('/api/admin/skip', {}).then(j => {
-      if (j.ok) location.reload();
-      else setStatus('Error.');
-    });
+    setStatus("");
+    post('/api/admin/skip', {})
+      .then(() => { setStatus("Skipped."); pollQueue(); pollState(); })
+      .catch(e => setStatus('Error: ' + (e.message || 'unknown')));
   }
 
   function clearQueue() {
-    post('/api/admin/clear_queue', {}).then(j => {
-      if (j.ok) location.reload();
-      else setStatus('Error.');
-    });
+    setStatus("");
+    post('/api/admin/clear_queue', {})
+      .then(() => { setStatus("Queue cleared."); pollQueue(); pollState(); })
+      .catch(e => setStatus('Error: ' + (e.message || 'unknown')));
   }
 
   function removeFromQueue(queue_id) {
-    post('/api/admin/queue_remove', {queue_id}).then(j => {
-      if (j.ok) location.reload();
-      else setStatus('Error: ' + (j.error || 'unknown'));
-    });
+    setStatus("");
+    post('/api/admin/queue_remove', {queue_id})
+      .then(() => { setStatus("Removed."); pollQueue(); pollState(); })
+      .catch(e => setStatus('Error: ' + (e.message || 'unknown')));
   }
 
   function promote(queue_id) {
-    post('/api/admin/queue_promote', {queue_id}).then(j => {
-      if (j.ok) location.reload();
-      else setStatus('Error: ' + (j.error || 'unknown'));
-    });
+    setStatus("");
+    post('/api/admin/queue_promote', {queue_id})
+      .then(() => { setStatus("Promoted."); pollQueue(); pollState(); })
+      .catch(e => setStatus('Error: ' + (e.message || 'unknown')));
   }
 
-  function tvPause() { post('/api/admin/tv_pause', {}).then(j => j.ok ? location.reload() : setStatus('Error.')); }
-  function tvResume(){ post('/api/admin/tv_resume', {}).then(j => j.ok ? location.reload() : setStatus('Error.')); }
-  function tvStop()  { post('/api/admin/tv_stop', {}).then(j => j.ok ? location.reload() : setStatus('Error.')); }
+  function togglePauseResume() {
+    if (STATE.paused) tvResume();
+    else tvPause();
+  }
 
-  function tvMute()  { post('/api/admin/tv_mute', {}).then(j => j.ok ? location.reload() : setStatus('Error.')); }
-  function tvUnmute(){ post('/api/admin/tv_unmute', {}).then(j => j.ok ? location.reload() : setStatus('Error.')); }
+  function tvPause() {
+    setStatus("");
+    // optimistic
+    STATE.paused = true;
+    setPaused(true, STATE.muted);
+    post('/api/admin/tv_pause', {})
+      .then(() => { setStatus("Paused."); pollState(); })
+      .catch(e => { STATE.paused = false; setPaused(false, STATE.muted); setStatus('Error: ' + (e.message || 'unknown')); });
+  }
+
+  function tvResume() {
+    setStatus("");
+    STATE.paused = false;
+    setPaused(false, STATE.muted);
+    post('/api/admin/tv_resume', {})
+      .then(() => { setStatus("Resumed."); pollState(); })
+      .catch(e => { STATE.paused = true; setPaused(true, STATE.muted); setStatus('Error: ' + (e.message || 'unknown')); });
+  }
+
+  function tvStop() {
+    setStatus("");
+    // stop implies pause+clear
+    STATE.paused = true;
+    setPaused(true, STATE.muted);
+    post('/api/admin/tv_stop', {})
+      .then(() => { setStatus("Stopped."); pollQueue(); pollState(); })
+      .catch(e => setStatus('Error: ' + (e.message || 'unknown')));
+  }
+
+  function toggleMute() {
+    if (STATE.muted) tvUnmute();
+    else tvMute();
+  }
+
+  function tvMute() {
+    setStatus("");
+    STATE.muted = true;
+    setMuted(true);
+    setPaused(STATE.paused, true);
+    post('/api/admin/tv_mute', {})
+      .then(() => { setStatus("Muted."); pollState(); })
+      .catch(e => { STATE.muted = false; setMuted(false); setPaused(STATE.paused, false); setStatus('Error: ' + (e.message || 'unknown')); });
+  }
+
+  function tvUnmute() {
+    setStatus("");
+    STATE.muted = false;
+    setMuted(false);
+    setPaused(STATE.paused, false);
+    post('/api/admin/tv_unmute', {})
+      .then(() => { setStatus("Unmuted."); pollState(); })
+      .catch(e => { STATE.muted = true; setMuted(true); setPaused(STATE.paused, true); setStatus('Error: ' + (e.message || 'unknown')); });
+  }
 
   function mediaScan() {
-    post('/api/admin/media_scan', {}).then(j => {
-      if (j.ok) location.reload();
-      else setStatus('Error: ' + (j.error || 'unknown'));
-    });
+    setStatus("");
+    post('/api/admin/media_scan', {})
+      .then(j => { setStatus(`Media scan: seen ${j.seen_mp4}, added ${j.added}, disabled_missing ${j.disabled_missing}`); location.reload(); })
+      .catch(e => setStatus('Error: ' + (e.message || 'unknown')));
   }
 
   function avMode(mode) {
-    post('/api/admin/av_mode', {mode}).then(j => {
-      if (j.ok) location.reload();
-      else setStatus('Error: ' + (j.error || 'unknown'));
-    });
+    setStatus("");
+    // optimistic
+    STATE.av_mode = mode;
+    setTopAv(mode);
+
+    post('/api/admin/av_mode', {mode})
+      .then(() => { setStatus(`Mode set: ${mode}`); pollState(); })
+      .catch(e => {
+        // rollback by polling
+        setStatus('Error: ' + (e.message || 'unknown'));
+        pollState();
+      });
   }
+
+  // ---------- Polling (THIS fixes admin not updating when user adds queue items) ----------
+  async function pollQueue() {
+    try {
+      const r = await fetch("/api/queue", { cache: "no-store" });
+      const j = await r.json();
+      renderQueue(j.items || []);
+    } catch (e) {
+      // ignore transient
+    }
+  }
+
+  async function pollState() {
+    try {
+      const r = await fetch("/api/state", { cache: "no-store" });
+      const j = await r.json();
+      STATE = {
+        locked: !!j.locked,
+        paused: !!j.paused,
+        muted: !!j.muted,
+        av_mode: (j.av_mode || "partybox").toLowerCase(),
+        now: j.now || null
+      };
+
+      setTopLock(STATE.locked);
+      setTopAv(STATE.av_mode);
+      setMuted(STATE.muted);
+      setPaused(STATE.paused, STATE.muted);
+      updateNowCardFromState({
+        locked: STATE.locked,
+        paused: STATE.paused,
+        muted: STATE.muted,
+        av_mode: STATE.av_mode,
+        now: STATE.now
+      });
+
+    } catch (e) {
+      // ignore transient
+    }
+  }
+
+  // init
+  pollState();
+  pollQueue();
+
+  // keep it live
+  setInterval(pollState, 1000);
+  setInterval(pollQueue, 1200);
 </script>
 {% endblock %}
