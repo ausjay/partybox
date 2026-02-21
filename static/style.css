@@ -408,9 +408,13 @@ p { margin: 0; }
   .brandText .headline { font-size: 18px; }
   .row input, .input { min-width: 0; width: 100%; }
   .row { flex-direction: column; align-items: stretch; }
-  .btnGroup { width: 100%; justify-content: space-between; }
+  .row .btn { width: 100%; }
+  .btnGroup { width: 100%; justify-content: space-between; flex-wrap: wrap; }
+  .panelHeader { flex-direction: column; align-items: flex-start; }
+  .panelHeader .btnGroup { width: 100%; justify-content: flex-start; }
   .listrow { flex-direction: column; align-items: flex-start; }
-  .listrow .badge { align-self: flex-end; }
+  .listrow .badge { align-self: flex-start; }
+  .listrow .ellip { white-space: normal; overflow: visible; text-overflow: clip; }
 }
 /* ===== PartyBox "Admin-style" shared UI ===== */
 
