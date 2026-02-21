@@ -401,6 +401,8 @@ p { margin: 0; }
   .panelHeader .hint { font-size: 11px; }
   .panel-now .title { font-size: 16px; }
   .panel-now .sub { font-size: 12px; }
+  .panel-now .card .title { font-size: 15px; line-height: 1.2; }
+  .panel-now .card .sub { font-size: 11px; }
 }
 
 @media (max-width: 640px) {
