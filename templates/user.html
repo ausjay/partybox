@@ -103,7 +103,6 @@
             <div class="card">
               <div class="title" id="now_title">—</div>
               <div class="sub" id="now_note" style="display:none;"></div>
-              <div class="muted" id="now_yid" style="margin-top: 6px; display:none;"></div>
             </div>
 
             <div style="margin-top: 14px;">
@@ -305,14 +304,11 @@
       const now = STATE.now;
       if (!now) {
         el("now_title").textContent = "—";
-        el("now_yid").textContent = "";
         el("now_note").style.display = "none";
         return;
       }
 
       el("now_title").textContent = now.title || "(untitled)";
-      el("now_yid").textContent = now.youtube_id ? `ID: ${now.youtube_id}` : "";
-      el("now_yid").style.display = "none";
       if (now.note_text) {
         el("now_note").style.display = "block";
         el("now_note").textContent = now.note_text;
