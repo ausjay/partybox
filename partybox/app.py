@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import os
 import re
+import json
+import time
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -32,13 +34,14 @@ def _admin_or_403() -> str:
 
 def _sync_local_media() -> Dict[str, Any]:
     """
-    Scan data/media for .mp4 files and ensure each has a catalog entry:
+    Scan media dir for .mp4 files and ensure each has a catalog entry:
       youtube_id = file:<filename>
       title      = filename sans extension (unless already exists in DB)
 
     ALSO:
       - disable catalog entries whose local file is missing
       - remove queued items whose local file is missing
+      - RE-ENABLE catalog entries whose file exists on disk
     """
     media_dir = _media_dir()
     os.makedirs(media_dir, exist_ok=True)
@@ -48,7 +51,7 @@ def _sync_local_media() -> Dict[str, Any]:
     seen = 0
 
     # Track which local tokens exist on disk
-    existing_tokens = set()
+    existing_tokens: set[str] = set()
 
     for name in sorted(os.listdir(media_dir)):
         if not name.lower().endswith(".mp4"):
@@ -67,6 +70,21 @@ def _sync_local_media() -> Dict[str, Any]:
         title = os.path.splitext(name)[0]
         if DB.upsert_catalog_item(title=title, youtube_id=youtube_id):
             added += 1
+
+    # Re-enable catalog items whose local file exists (important!)
+    reenabled = 0
+    for it in DB.list_catalog(enabled_only=False):
+        yid = (it.get("youtube_id") or "").strip()
+        if not yid.startswith("file:"):
+            continue
+        if yid not in existing_tokens:
+            continue
+        try:
+            if not bool(it.get("enabled", True)):
+                DB.set_catalog_enabled(int(it["id"]), True)
+                reenabled += 1
+        except Exception:
+            pass
 
     # Disable catalog items whose file is missing
     disabled = 0
@@ -100,6 +118,7 @@ def _sync_local_media() -> Dict[str, Any]:
         "media_dir": media_dir,
         "seen_mp4": seen,
         "added": added,
+        "reenabled_present": reenabled,
         "disabled_missing": disabled,
         "queue_removed_missing": removed_from_queue,
     }
@@ -299,25 +318,6 @@ def create_app() -> Flask:
                 }
             )
 
-        idle = DB.pick_idle()
-        if idle:
-            return jsonify(
-                {
-                    "locked": locked,
-                    "paused": False,
-                    "muted": muted,
-                    "av_mode": av_mode,
-                    "mode": "idle",
-                    "now": {
-                        "queue_id": None,
-                        "title": idle["title"],
-                        "youtube_id": idle["youtube_id"],
-                        "note_text": "",
-                    },
-                    "up_next": None,
-                }
-            )
-
         return jsonify(
             {
                 "locked": locked,
@@ -334,6 +334,33 @@ def create_app() -> Flask:
     def api_queue():
         items = DB.list_queue(limit=100)
         return jsonify({"items": items})
+
+    @app.post("/api/tv/heartbeat")
+    def api_tv_heartbeat():
+        """
+        TV agent heartbeat (tv_player.py and/or /tv page can call this)
+        Stores last seen + basic info for admin UI.
+        """
+        try:
+            data = request.get_json(force=True, silent=True) or {}
+            mode = str(data.get("mode") or "")
+            title = str(data.get("title") or "")
+            youtube_id = str(data.get("youtube_id") or "")
+
+            payload = {
+                "ts": int(time.time()),
+                "mode": mode[:40],
+                "title": title[:200],
+                "youtube_id": youtube_id[:200],
+                "remote_addr": request.remote_addr,
+            }
+
+            # Reuse settings table if you have it (k/v text)
+            # If your db helper is different, change these 2 lines only.
+            DB.set_setting("tv_heartbeat_json", json.dumps(payload))
+            return jsonify({"ok": True})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 400
 
     @app.post("/api/tv/mark_playing")
     def api_mark_playing():
@@ -395,6 +422,17 @@ def create_app() -> Flask:
 
         DB.set_setting("av_mode", mode)
         return jsonify({"ok": True, "mode": mode})
+
+    @app.get("/api/tv/status")
+    def api_tv_status():
+        try:
+            raw = DB.get_setting("tv_heartbeat_json") or ""
+            if not raw:
+                return jsonify({"ok": True, "status": None})
+            return jsonify({"ok": True, "status": json.loads(raw)})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
 
     @app.post("/api/admin/catalog_add")
     def api_catalog_add():
