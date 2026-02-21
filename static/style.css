@@ -405,6 +405,7 @@ p { margin: 0; }
   .panel-now .card .title { font-size: 14px; line-height: 1.15; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .panel-now .card .sub { font-size: 11px; }
   #up_next_card .title { font-size: 14px; line-height: 1.15; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .panel-queue { display: none; }
 }
 
 @media (max-width: 640px) {
@@ -552,4 +553,10 @@ button.pb-card{
   margin-top: 2px;
   font-size: 13px;
   color: rgba(255,255,255,0.64);
+}
+.upnext-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
 }

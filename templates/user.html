@@ -105,18 +105,19 @@
               <div class="sub" id="now_note" style="display:none;"></div>
             </div>
 
-            <div style="margin-top: 14px;">
-              <h2>Up Next</h2>
-              <div class="muted" id="up_next_empty" style="margin-top: 8px;">Queue is empty.</div>
-              <div id="up_next_card" class="card" style="display:none; margin-top: 10px;">
-                <div class="title" id="up_next_title">—</div>
-                <div class="sub" id="up_next_note" style="display:none;"></div>
+            <div class="upnext-stack" style="margin-top: 14px;">
+              <div class="upnext-header">
+                <h2>Up Next</h2>
+                <button id="btn_upnext_toggle" class="btn small ghost">Show all</button>
               </div>
+              <div class="muted" id="up_next_empty" style="margin-top: 8px;">Queue is empty.</div>
+              <div id="up_next_list" class="list" style="display:none; margin-top: 10px;"></div>
+              <div class="muted" id="up_next_more" style="display:none; margin-top: 8px;"></div>
             </div>
           </div>
         </div>
 
-        <!-- Full width: Queue -->
+        <!-- Full width: Queue (hidden on mobile) -->
         <div class="panel panel-queue" style="grid-column: span 12;">
           <div class="panelHeader">
             <div>
@@ -155,6 +156,8 @@
 
     // UI state
     let STATE = null;
+    let UP_NEXT_EXPANDED = false;
+    const UP_NEXT_LIMIT = 5;
 
     const el = (id) => document.getElementById(id);
 
@@ -316,34 +319,26 @@
         el("now_note").style.display = "none";
       }
 
-      const up = STATE.up_next;
-      if (up) {
-        el("up_next_empty").style.display = "none";
-        el("up_next_card").style.display = "block";
-        el("up_next_title").textContent = up.title || "(untitled)";
-        if (up.note_text) {
-          el("up_next_note").style.display = "block";
-          el("up_next_note").textContent = up.note_text;
-        } else {
-          el("up_next_note").style.display = "none";
-        }
-      } else {
-        el("up_next_empty").style.display = "block";
-        el("up_next_card").style.display = "none";
-      }
     }
 
-    function renderQueue(items) {
-      const list = el("queue_list");
+    function renderUpNext(items) {
+      const list = el("up_next_list");
+      const more = el("up_next_more");
+      const empty = el("up_next_empty");
       list.innerHTML = "";
 
       if (!items || !items.length) {
-        el("queue_empty").style.display = "block";
+        empty.style.display = "block";
+        list.style.display = "none";
+        more.style.display = "none";
         return;
       }
-      el("queue_empty").style.display = "none";
 
-      items.forEach((q, idx) => {
+      empty.style.display = "none";
+      list.style.display = "flex";
+
+      const shown = UP_NEXT_EXPANDED ? items : items.slice(0, UP_NEXT_LIMIT);
+      shown.forEach((q, idx) => {
         const row = document.createElement("div");
         row.className = "listrow";
 
@@ -369,6 +364,13 @@
         row.appendChild(b);
         list.appendChild(row);
       });
+
+      if (!UP_NEXT_EXPANDED && items.length > UP_NEXT_LIMIT) {
+        more.textContent = `Showing ${UP_NEXT_LIMIT} of ${items.length}`;
+        more.style.display = "block";
+      } else {
+        more.style.display = "none";
+      }
     }
 
     async function pollState() {
@@ -391,7 +393,7 @@
       try {
         const r = await fetch("/api/queue", { cache: "no-store" });
         const j = await r.json();
-        renderQueue(j.items || []);
+        renderUpNext(j.items || []);
       } catch (e) {}
     }
 
@@ -416,6 +418,11 @@
       el("btn_clear").addEventListener("click", () => { el("q").value = ""; renderResults(filterCatalog()); });
       el("q").addEventListener("input", () => renderResults(filterCatalog()));
       el("btn_refresh").addEventListener("click", () => { pollState(); pollQueue(); pollTvStatus(); });
+      el("btn_upnext_toggle").addEventListener("click", () => {
+        UP_NEXT_EXPANDED = !UP_NEXT_EXPANDED;
+        el("btn_upnext_toggle").textContent = UP_NEXT_EXPANDED ? "Show less" : "Show all";
+        pollQueue();
+      });
     }
 
     // init
