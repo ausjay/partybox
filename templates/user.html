@@ -1,147 +1,436 @@
-{% extends "base.html" %}
-{% block title %}Pick a Video — PartyBox{% endblock %}
-{% block body %}
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Pick Next Video — PartyBox</title>
+  <link rel="icon" href="/static/favicon.webp" type="image/webp" />
+  <link rel="apple-touch-icon" href="/static/partybox_logo.webp" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
 
-<div class="page">
-  <h1>Pick Next Video</h1>
+<body>
+  <div class="appBg">
+    <div class="page">
 
-  <!-- Spotify overlay (JS toggles this) -->
-  <div id="spotify_overlay" style="display:none; padding:16px; margin:12px 0; border-radius:12px; border:1px solid rgba(255,255,255,0.12); background: rgba(20,20,24,0.55);">
-    <div style="font-size:28px; font-weight:700;">Spotify Time</div>
-    <div style="margin-top:8px;">Open Spotify → Devices → select: <b>UJ-Partybox</b></div>
-    <div style="margin-top:8px; opacity:0.8;">Partybox requests are paused until Admin switches back.</div>
-  </div>
+      <!-- Topbar -->
+      <div class="topbar">
+        <div class="brandRow">
+          <div class="brandIcon"></div>
+          <div class="brandText">
+            <div class="headline">PartyBox</div>
+            <div class="tagline">Pick Next Video</div>
+          </div>
+        </div>
 
-  <!-- Lock banner (always present so JS can toggle it) -->
-  <div id="locked_banner" class="banner warn" style="display:none;">
-    Requests are currently locked by admin.
-  </div>
+        <div class="topActions">
+          <div class="pill" title="TV heartbeat">
+            <span id="tv_dot" class="dot warn"></span>
+            <span id="tv_label">TV offline</span>
+          </div>
+          <div class="pill" title="Playback mode">
+            <span class="dot" id="mode_dot"></span>
+            <span>Mode</span>
+            <span id="mode_text" class="muted">—</span>
+          </div>
+          <div class="pill" title="A/V mode">
+            <span class="dot" id="av_dot"></span>
+            <span id="av_text">—</span>
+          </div>
+        </div>
+      </div>
 
-  <div class="grid">
-    {% for it in items %}
-      <button class="card" onclick='requestVideo({{ it.id }}, {{ it.title|tojson }})'>
-        <div class="title">{{ it.title }}</div>
-        <div class="sub">Tap to add to queue</div>
-      </button>
-    {% endfor %}
-  </div>
+      <!-- Banners -->
+      <div id="paused_banner" class="pb-banner warn" style="display:none; margin: 12px 0;">
+        <div class="title">TV is paused</div>
+        <div class="sub">You can still add to the queue — it will start when Admin resumes playback.</div>
+      </div>
 
-  <div class="msgbox">
-    <input id="note" placeholder="Optional message (e.g. Happy birthday Ju)" maxlength="120" />
-  </div>
+      <div id="locked_banner" class="pb-banner warn" style="display:none; margin: 12px 0;">
+        <div class="title">Requests are locked</div>
+        <div class="sub">Ask the host to unlock requests to add to the queue.</div>
+      </div>
 
-  <h2>Queue</h2>
-  <div class="list">
-    {% if queue|length == 0 %}
-      <div class="muted">Queue is empty.</div>
-    {% else %}
-      {% for q in queue %}
-        <div class="listrow {% if q.status == 'playing' %}playing{% endif %}">
-          <div class="grow">
-            <div class="title">
-              {% if q.status == 'playing' %}▶{% else %}{{ loop.index }}.{% endif %}
-              {{ q.title }}
+      <div id="spotify_banner" class="pb-banner warn" style="display:none; margin: 12px 0;">
+        <div class="title">Spotify Mode</div>
+        <div class="sub">Video requests are disabled while Spotify is active.</div>
+      </div>
+
+      <div class="grid user-grid" style="margin-top: 12px;">
+        <!-- Left: Browse -->
+        <div class="panel panel-browse" style="grid-column: span 8;">
+          <div class="panelHeader">
+            <div>
+              <div class="kicker">Browse</div>
+              <div class="hint">Tap a card to add it to the queue</div>
+            </div>
+
+            <div class="btnGroup">
+              <button class="btn small ghost" id="btn_refresh">Refresh</button>
+            </div>
+          </div>
+
+          <div class="panelInner">
+            <div class="row">
+              <input id="q" class="input" placeholder="Search title..." autocomplete="off" />
+              <button class="btn primary" id="btn_search">Search</button>
+              <button class="btn ghost" id="btn_clear">Clear</button>
+            </div>
+
+            <div class="muted" style="margin-top: 6px;">
+              Tip: if the TV is paused, your selection will start when Admin resumes.
+            </div>
+
+            <div style="margin-top: 14px;">
+              <h2>Results</h2>
+              <div id="results" class="list" style="margin-top: 10px;"></div>
+              <div id="no_results" class="muted" style="display:none; margin-top: 10px;">No results.</div>
             </div>
           </div>
         </div>
-      {% endfor %}
-    {% endif %}
+
+        <!-- Right: Now / Up Next -->
+        <div class="panel panel-now" style="grid-column: span 4;">
+          <div class="panelHeader">
+            <div>
+              <div class="kicker">Now Playing</div>
+              <div class="hint" id="now_mode_hint">—</div>
+            </div>
+            <span id="now_badge" class="badge">—</span>
+          </div>
+
+          <div class="panelInner">
+            <div class="card">
+              <div class="title" id="now_title">—</div>
+              <div class="sub" id="now_note" style="display:none;"></div>
+              <div class="muted" id="now_yid" style="margin-top: 6px;"></div>
+            </div>
+
+            <div style="margin-top: 14px;">
+              <h2>Up Next</h2>
+              <div class="muted" id="up_next_empty" style="margin-top: 8px;">Queue is empty.</div>
+              <div id="up_next_card" class="card" style="display:none; margin-top: 10px;">
+                <div class="title" id="up_next_title">—</div>
+                <div class="sub" id="up_next_note" style="display:none;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Full width: Queue -->
+        <div class="panel panel-queue" style="grid-column: span 12;">
+          <div class="panelHeader">
+            <div>
+              <div class="kicker">Queue</div>
+              <div class="hint">What will play after “Now Playing”</div>
+            </div>
+          </div>
+          <div class="panelInner">
+            <div id="queue_list" class="list"></div>
+            <div id="queue_empty" class="muted" style="display:none;">Queue is empty.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
   </div>
 
-  <div id="status" class="status"></div>
-</div>
-{% endblock %}
+  <div id="toast" class="pb-toast hidden"></div>
 
-{% block scripts %}
-<script>
-  function requestVideo(catalogId, title) {
-    const note = document.getElementById('note').value || '';
-    fetch('/api/request_video', {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({catalog_id: catalogId, note_text: note})
-    }).then(r => r.json()).then(j => {
-      const s = document.getElementById('status');
-      if (j.ok) {
-        s.textContent = `Queued: ${title}`;
-        document.getElementById('note').value = '';
-        setTimeout(() => location.reload(), 250);
+  <script>
+    // Server-provided catalog items (enabled only)
+    const CATALOG = [
+      {% for it in items %}
+      {
+        id: {{ it["id"]|int }},
+        title: {{ (it["title"] or "")|tojson }},
+        youtube_id: {{ (it["youtube_id"] or "")|tojson }},
+        enabled: {{ 1 if it.get("enabled", True) else 0 }}
+      }{% if not loop.last %},{% endif %}
+      {% endfor %}
+    ];
+
+    // Server-provided initial lock + av_mode (will be overwritten by /api/state polling)
+    let LOCKED = {{ "true" if locked else "false" }};
+    let AV_MODE = {{ (av_mode or "partybox")|tojson }};
+
+    // UI state
+    let STATE = null;
+
+    const el = (id) => document.getElementById(id);
+
+    function showToast(msg, kind="ok", ms=1800) {
+      const t = el("toast");
+      t.textContent = msg;
+      t.className = `pb-toast ${kind}`;
+      t.classList.remove("hidden");
+      window.clearTimeout(showToast._timer);
+      showToast._timer = window.setTimeout(() => t.classList.add("hidden"), ms);
+    }
+
+    function isDisabledForRequests() {
+      if (!STATE) return false;
+      if (STATE.locked) return true;
+      if ((STATE.av_mode || "").toLowerCase() === "spotify") return true;
+      return false;
+    }
+
+    function renderResults(list) {
+      const results = el("results");
+      results.innerHTML = "";
+
+      if (!list.length) {
+        el("no_results").style.display = "block";
+        return;
+      }
+      el("no_results").style.display = "none";
+
+      const disable = isDisabledForRequests();
+
+      for (const item of list) {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "listrow";
+        row.style.cursor = disable ? "not-allowed" : "pointer";
+        row.disabled = disable;
+
+        const left = document.createElement("div");
+        left.className = "grow";
+
+        const title = document.createElement("div");
+        title.className = "title ellip";
+        title.textContent = item.title || "(untitled)";
+
+        const sub = document.createElement("div");
+        sub.className = "sub ellip";
+        sub.textContent = item.youtube_id || "";
+
+        left.appendChild(title);
+        left.appendChild(sub);
+
+        const badge = document.createElement("span");
+        badge.className = "badge";
+        badge.textContent = "Add";
+
+        row.appendChild(left);
+        row.appendChild(badge);
+
+        row.addEventListener("click", () => requestVideo(item.id));
+
+        results.appendChild(row);
+      }
+    }
+
+    function filterCatalog() {
+      const q = (el("q").value || "").trim().toLowerCase();
+      if (!q) return CATALOG.slice();
+      return CATALOG.filter(it => (it.title || "").toLowerCase().includes(q));
+    }
+
+    async function requestVideo(catalogId) {
+      // Keep paused informational only: allow queueing while paused.
+      if (!STATE) return;
+
+      if ((STATE.av_mode || "").toLowerCase() === "spotify") {
+        showToast("Spotify Mode — requests disabled", "warn");
+        return;
+      }
+      if (STATE.locked) {
+        showToast("Requests locked", "warn");
+        return;
+      }
+
+      try {
+        const r = await fetch("/api/request_video", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ catalog_id: catalogId })
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || !j.ok) {
+          showToast(j.error || "Request failed", "danger");
+          return;
+        }
+        showToast("Added to queue");
+        pollQueue();
+      } catch (e) {
+        showToast("Request failed (network)", "danger");
+      }
+    }
+
+    function updateBanners() {
+      if (!STATE) return;
+      el("paused_banner").style.display = STATE.paused ? "block" : "none";
+      el("locked_banner").style.display = STATE.locked ? "block" : "none";
+      el("spotify_banner").style.display = ((STATE.av_mode || "").toLowerCase() === "spotify") ? "block" : "none";
+    }
+
+    function updateTopPills(tvOnline) {
+      // TV pill
+      const dot = el("tv_dot");
+      dot.classList.remove("ok", "warn", "bad");
+      dot.classList.add(tvOnline ? "ok" : "bad");
+      el("tv_label").textContent = tvOnline ? "TV online" : "TV offline";
+
+      // Mode pill
+      const mode = (STATE?.mode || "—").toLowerCase();
+      el("mode_text").textContent = mode;
+      const md = el("mode_dot");
+      md.classList.remove("ok", "warn", "bad");
+      if (mode === "playing" || mode === "queue" || mode === "idle") md.classList.add("ok");
+      else if (mode === "paused") md.classList.add("warn");
+      else md.classList.add("bad");
+
+      // AV pill
+      const av = (STATE?.av_mode || AV_MODE || "partybox").toLowerCase();
+      el("av_text").textContent = (av === "spotify") ? "Spotify" : "PartyBox";
+      const ad = el("av_dot");
+      ad.classList.remove("ok", "warn", "bad");
+      ad.classList.add(av === "spotify" ? "warn" : "ok");
+    }
+
+    function updateNowPanel() {
+      if (!STATE) return;
+
+      const mode = (STATE.mode || "").toLowerCase();
+      el("now_mode_hint").textContent = mode ? mode : "—";
+
+      const badge = el("now_badge");
+      badge.className = "badge";
+      if (mode === "playing") badge.classList.add("playing");
+      if (mode === "paused") badge.classList.add("paused");
+      if (STATE.locked) badge.classList.add("locked");
+      badge.textContent = mode ? mode.toUpperCase() : "—";
+
+      const now = STATE.now;
+      if (!now) {
+        el("now_title").textContent = "—";
+        el("now_yid").textContent = "";
+        el("now_note").style.display = "none";
+        return;
+      }
+
+      el("now_title").textContent = now.title || "(untitled)";
+      el("now_yid").textContent = now.youtube_id ? `ID: ${now.youtube_id}` : "";
+      if (now.note_text) {
+        el("now_note").style.display = "block";
+        el("now_note").textContent = now.note_text;
       } else {
-        s.textContent = `Error: ${j.error || 'unknown'}`;
+        el("now_note").style.display = "none";
       }
-    }).catch(() => {
-      document.getElementById('status').textContent = 'Network error';
-    });
-  }
-</script>
 
-<script>
-  // ---- Live state/queue refresh ----
-  let lastQueueSig = "";
-  let lastStateSig = "";
+      const up = STATE.up_next;
+      if (up) {
+        el("up_next_empty").style.display = "none";
+        el("up_next_card").style.display = "block";
+        el("up_next_title").textContent = up.title || "(untitled)";
+        if (up.note_text) {
+          el("up_next_note").style.display = "block";
+          el("up_next_note").textContent = up.note_text;
+        } else {
+          el("up_next_note").style.display = "none";
+        }
+      } else {
+        el("up_next_empty").style.display = "block";
+        el("up_next_card").style.display = "none";
+      }
+    }
 
-  function setButtonsDisabled(disabled) {
-    document.querySelectorAll('button.card').forEach(b => { b.disabled = !!disabled; });
-  }
+    function renderQueue(items) {
+      const list = el("queue_list");
+      list.innerHTML = "";
 
-  function applyStateUI(state) {
-    const av = (state.av_mode || 'partybox').toLowerCase();
-    const locked = !!state.locked;
-
-    // Show/hide spotify overlay
-    const so = document.getElementById('spotify_overlay');
-    so.style.display = (av === 'spotify') ? 'block' : 'none';
-
-    // Show/hide locked banner
-    const lb = document.getElementById('locked_banner');
-    lb.style.display = locked ? 'block' : 'none';
-
-    // Disable buttons if locked OR spotify mode
-    setButtonsDisabled(locked || av === 'spotify');
-  }
-
-  async function pollState() {
-    try {
-      const r = await fetch('/api/state', {cache:'no-store'});
-      const s = await r.json();
-
-      // Trigger a hard refresh if admin flips anything that affects /u
-      const sig = JSON.stringify([
-        (s.av_mode || 'partybox'),
-        !!s.locked,
-        !!s.paused,
-        !!s.muted,
-        (s.mode || '')
-      ]);
-
-      applyStateUI(s);
-
-      if (lastStateSig && sig !== lastStateSig) {
-        location.reload();
+      if (!items || !items.length) {
+        el("queue_empty").style.display = "block";
         return;
       }
-      lastStateSig = sig;
-    } catch (_) {}
-  }
+      el("queue_empty").style.display = "none";
 
-  async function pollQueue() {
-    try {
-      const r = await fetch('/api/queue', {cache:'no-store'});
-      const j = await r.json();
+      items.forEach((q, idx) => {
+        const row = document.createElement("div");
+        row.className = "listrow";
 
-      const sig = JSON.stringify((j.items||[]).map(x => [x.id, x.status, x.pos]));
-      if (lastQueueSig && sig !== lastQueueSig) {
-        location.reload();
-        return;
+        const left = document.createElement("div");
+        left.className = "grow";
+
+        const t = document.createElement("div");
+        t.className = "title ellip";
+        t.textContent = `${idx + 1}. ${q.title || "(untitled)"}`;
+
+        const meta = document.createElement("div");
+        meta.className = "sub ellip";
+        meta.textContent = q.note_text ? q.note_text : (q.youtube_id || "");
+
+        left.appendChild(t);
+        left.appendChild(meta);
+
+        const b = document.createElement("span");
+        b.className = "badge";
+        b.textContent = q.status ? String(q.status).toUpperCase() : "QUEUED";
+
+        row.appendChild(left);
+        row.appendChild(b);
+        list.appendChild(row);
+      });
+    }
+
+    async function pollState() {
+      try {
+        const r = await fetch("/api/state", { cache: "no-store" });
+        const j = await r.json();
+        STATE = j;
+
+        updateBanners();
+
+        // Re-render results to apply disabled state when locked/spotify changes
+        renderResults(filterCatalog());
+        updateNowPanel();
+      } catch (e) {
+        // keep UI; don’t spam
       }
-      lastQueueSig = sig;
-    } catch (_) {}
-  }
+    }
 
-  // Start quickly, then keep checking
-  pollState();
-  pollQueue();
-  setInterval(pollState, 2000);
-  setInterval(pollQueue, 3000);
-</script>
-{% endblock %}
+    async function pollQueue() {
+      try {
+        const r = await fetch("/api/queue", { cache: "no-store" });
+        const j = await r.json();
+        renderQueue(j.items || []);
+      } catch (e) {}
+    }
+
+    async function pollTvStatus() {
+      // best-effort online indicator using /api/tv/status
+      try {
+        const r = await fetch("/api/tv/status", { cache: "no-store" });
+        const j = await r.json();
+        if (!j.ok) throw new Error("bad");
+        const st = j.status;
+        const now = Math.floor(Date.now() / 1000);
+        const online = !!(st && st.ts && (now - st.ts) <= 15);
+        updateTopPills(online);
+      } catch (e) {
+        // fall back: if state fetch works, assume server ok but tv maybe unknown
+        updateTopPills(false);
+      }
+    }
+
+    function wireUI() {
+      el("btn_search").addEventListener("click", () => renderResults(filterCatalog()));
+      el("btn_clear").addEventListener("click", () => { el("q").value = ""; renderResults(filterCatalog()); });
+      el("q").addEventListener("input", () => renderResults(filterCatalog()));
+      el("btn_refresh").addEventListener("click", () => { pollState(); pollQueue(); pollTvStatus(); });
+    }
+
+    // init
+    wireUI();
+    renderResults(filterCatalog());
+    pollState();
+    pollQueue();
+    pollTvStatus();
+
+    setInterval(pollState, 1000);
+    setInterval(pollQueue, 2000);
+    setInterval(pollTvStatus, 5000);
+  </script>
+</body>
+</html>

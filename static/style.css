@@ -1,32 +1,547 @@
-body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:#0b0f14; color:#fff; }
-.page { max-width: 900px; margin: 0 auto; padding: 16px; }
-h1 { margin: 6px 0 12px; }
-h2 { margin-top: 18px; }
-.row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin: 10px 0; }
+/* =========================================
+   PartyBox Design Tokens v1.0
+   ========================================= */
 
-.btn, .card { background:#1a2230; color:#fff; border:1px solid #2b3a52; border-radius:12px; padding:12px 14px; cursor:pointer; }
-.btn:active, .card:active { transform: translateY(1px); }
-.btn:disabled, .card:disabled { opacity:0.5; cursor:not-allowed; }
+/* --- global font: applies to tv.html, user.html, admin.html --- */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap");
 
-.grid { display:grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-.card { text-align:left; }
-.title { font-weight:700; }
-.sub { opacity:0.75; font-size: 12px; margin-top: 4px; }
-.muted { opacity:0.6; font-size: 12px; }
+:root {
+  --font-sans: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  --brand-logo: url("/static/partybox_logo.webp");
+}
 
-.msgbox input, .row input { background:#0f1620; color:#fff; border:1px solid #2b3a52; border-radius:10px; padding:12px; min-width: 220px; }
-.status { margin-top: 10px; opacity:0.85; }
+html, body {
+  font-family: var(--font-sans);
+  color-scheme: dark;
+}
 
-.banner { padding:10px 12px; border-radius:10px; margin: 10px 0; }
-.banner.warn { background:#3b2b12; border:1px solid #9a6a1d; }
+:root {
+  /* Base */
+  --bg-main: #070B1A;
+  --bg-panel: #0E1426;
+  --bg-elevated: #131B34;
+  --bg-border: #1C2746;
+
+  /* Brand */
+  --cyan: #00D4FF;
+  --cyan-soft: #0099FF;
+  --magenta: #FF2DAF;
+  --purple: #C200FF;
+  --brand-gradient: linear-gradient(90deg, #00D4FF 0%, #FF2DAF 100%);
+
+  /* Status */
+  --success: #00FF88;
+  --warning: #FFB020;
+  --danger: #FF3B3B;
+
+  /* Text */
+  --text-primary: #EAF6FF;
+  --text-secondary: #A8B4CC;
+  --text-muted: #7C8CA3;
+
+  /* FX */
+  --shadow: 0 14px 45px rgba(0, 0, 0, 0.55);
+  --shadow-soft: 0 10px 30px rgba(0, 0, 0, 0.35);
+  --ring: 0 0 0 2px rgba(0, 212, 255, 0.22), 0 0 0 6px rgba(255, 45, 175, 0.10);
+
+  /* Radius */
+  --r-lg: 16px;
+  --r-md: 12px;
+  --r-sm: 10px;
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--bg-main);
+  color: var(--text-primary);
+}
+
+/* =========================================
+   Background: faint neon grid texture
+   - Applies to "app" pages (admin/user), not TV fullscreen
+   ========================================= */
+
+.appBg {
+  position: relative;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.appBg::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.22;
+  background:
+    radial-gradient(1200px 700px at 18% 20%, rgba(0,212,255,0.18), transparent 60%),
+    radial-gradient(900px 600px at 78% 35%, rgba(255,45,175,0.14), transparent 62%),
+    radial-gradient(1100px 650px at 55% 90%, rgba(194,0,255,0.10), transparent 60%),
+    linear-gradient(rgba(0,0,0,0.35), rgba(0,0,0,0.35));
+}
+
+.appBg::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.12;
+  background-image:
+    linear-gradient(to right, rgba(0,212,255,0.22) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,45,175,0.18) 1px, transparent 1px);
+  background-size: 88px 88px;
+  filter: blur(0.2px);
+  transform: translateZ(0);
+}
+
+.page {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 18px;
+}
+
+h1, h2, h3 { margin: 0; }
+h2 { font-size: 15px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(234,246,255,0.80); }
+p { margin: 0; }
+
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 10px 0; }
+.grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+
+/* =========================================
+   Panels / Cards
+   ========================================= */
+
+.panel {
+  background: linear-gradient(180deg, rgba(19,27,52,0.92), rgba(14,20,38,0.92));
+  border: 1px solid rgba(28,39,70,0.95);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-soft);
+}
+
+.panelInner { padding: 14px; }
+
+.panelHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid rgba(28,39,70,0.75);
+}
+
+.panelHeader .kicker {
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(234,246,255,0.78);
+}
+
+.panelHeader .hint {
+  font-size: 12px;
+  color: rgba(168,180,204,0.75);
+}
+
+.card {
+  background: rgba(14,20,38,0.75);
+  border: 1px solid rgba(28,39,70,0.85);
+  border-radius: var(--r-lg);
+  padding: 14px;
+}
+
+.title { font-weight: 750; }
+.sub { color: rgba(168,180,204,0.78); font-size: 12px; margin-top: 4px; }
+.muted { color: rgba(168,180,204,0.62); font-size: 12px; }
+
+/* =========================================
+   Topbar
+   ========================================= */
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.brandRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brandIcon {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid rgba(28,39,70,0.9);
+  background-color: rgba(14,20,38,0.85);
+  background-image:
+              var(--brand-logo),
+              radial-gradient(circle at 30% 30%, rgba(0,212,255,0.35), transparent 60%),
+              radial-gradient(circle at 70% 60%, rgba(255,45,175,0.28), transparent 62%);
+  background-size: cover, 140% 140%, 140% 140%;
+  background-position: center, 30% 30%, 70% 60%;
+  background-blend-mode: screen, normal, normal;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.25), 0 18px 45px rgba(0,0,0,0.35);
+}
+
+.brandText .headline {
+  font-size: 20px;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+}
+
+.brandText .tagline {
+  font-size: 12px;
+  color: rgba(168,180,204,0.75);
+  margin-top: 2px;
+}
+
+.topActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* =========================================
+   Pills / Badges
+   ========================================= */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(28,39,70,0.9);
+  background: rgba(14,20,38,0.65);
+  color: rgba(234,246,255,0.88);
+  font-size: 12px;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: rgba(168,180,204,0.6);
+}
+
+.dot.ok { background: rgba(0,255,136,0.85); box-shadow: 0 0 0 5px rgba(0,255,136,0.10); }
+.dot.warn { background: rgba(255,176,32,0.85); box-shadow: 0 0 0 5px rgba(255,176,32,0.10); }
+.dot.bad { background: rgba(255,59,59,0.85); box-shadow: 0 0 0 5px rgba(255,59,59,0.10); }
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  border: 1px solid rgba(28,39,70,0.9);
+  background: rgba(14,20,38,0.55);
+  color: rgba(234,246,255,0.82);
+}
+
+.badge.playing { border-color: rgba(0,212,255,0.35); box-shadow: 0 0 0 4px rgba(0,212,255,0.08); }
+.badge.paused  { border-color: rgba(255,176,32,0.35); box-shadow: 0 0 0 4px rgba(255,176,32,0.08); }
+.badge.locked  { border-color: rgba(255,59,59,0.30); box-shadow: 0 0 0 4px rgba(255,59,59,0.06); }
+
+/* =========================================
+   Buttons / Inputs
+   ========================================= */
+
+.btn {
+  background: rgba(19,27,52,0.85);
+  color: var(--text-primary);
+  border: 1px solid rgba(28,39,70,0.95);
+  border-radius: 14px;
+  padding: 12px 14px;
+  cursor: pointer;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset;
+  transition: transform 0.06s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn:hover { border-color: rgba(0,212,255,0.22); }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn.primary {
+  border-color: rgba(0,212,255,0.30);
+  background: linear-gradient(180deg, rgba(0,212,255,0.18), rgba(19,27,52,0.85));
+  box-shadow: 0 0 0 4px rgba(0,212,255,0.06), 0 16px 40px rgba(0,0,0,0.35);
+}
+
+.btn.pink {
+  border-color: rgba(255,45,175,0.28);
+  background: linear-gradient(180deg, rgba(255,45,175,0.14), rgba(19,27,52,0.85));
+  box-shadow: 0 0 0 4px rgba(255,45,175,0.05), 0 16px 40px rgba(0,0,0,0.35);
+}
+
+.btn.danger {
+  border-color: rgba(255,59,59,0.28);
+  background: linear-gradient(180deg, rgba(255,59,59,0.14), rgba(19,27,52,0.85));
+}
+
+.btn.ghost {
+  background: rgba(14,20,38,0.55);
+}
+
+.btn.small {
+  padding: 9px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.btnGroup {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.row input, .msgbox input, .input {
+  background: rgba(14,20,38,0.65);
+  color: var(--text-primary);
+  border: 1px solid rgba(28,39,70,0.95);
+  border-radius: 14px;
+  padding: 12px 12px;
+  min-width: 220px;
+  outline: none;
+}
+
+.row input:focus, .input:focus { box-shadow: var(--ring); border-color: rgba(0,212,255,0.28); }
+
+.status {
+  margin-top: 10px;
+  color: rgba(234,246,255,0.80);
+  font-size: 13px;
+}
+
+/* =========================================
+   Lists / Rows
+   ========================================= */
+
+.list { display:flex; flex-direction:column; gap:10px; margin-top: 10px; }
+
+.listrow {
+  display:flex;
+  gap:10px;
+  align-items:center;
+  background: rgba(14,20,38,0.62);
+  border: 1px solid rgba(28,39,70,0.9);
+  padding: 12px;
+  border-radius: var(--r-lg);
+}
+
+.listrow.playing {
+  border-color: rgba(0,212,255,0.30);
+  box-shadow: 0 0 0 4px rgba(0,212,255,0.06);
+}
+
+.grow { flex:1; min-width: 0; }
+.ellip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.kv {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 8px 10px;
+  margin-top: 8px;
+}
+
+.kv .k { color: rgba(168,180,204,0.72); font-size: 12px; }
+.kv .v { color: rgba(234,246,255,0.90); font-size: 12px; }
+
+/* =========================================
+   TV fullscreen (leave mostly alone)
+   ========================================= */
 
 .tv { width:100vw; height:100vh; background:#000; display:flex; }
 .playerWrap { flex:1; }
 #player { width:100%; height:100%; }
 
-.toast { position: fixed; left: 16px; bottom: 16px; background: rgba(20,24,30,0.85); border: 1px solid rgba(120,140,180,0.35); padding: 12px 14px; border-radius: 12px; max-width: 75vw; }
+.toast {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  background: rgba(20,24,30,0.85);
+  border: 1px solid rgba(120,140,180,0.35);
+  padding: 12px 14px;
+  border-radius: 12px;
+  max-width: 75vw;
+}
 .hidden { display:none; }
 
-.list { display:flex; flex-direction:column; gap:10px; margin-top: 10px; }
-.listrow { display:flex; gap:10px; align-items:center; background:#0f1620; border:1px solid #2b3a52; padding:10px; border-radius:12px; }
-.grow { flex:1; }
+/* =========================================
+   Responsive tweaks (iPad-ish)
+   ========================================= */
+
+@media (max-width: 920px) {
+  .page { padding: 14px; }
+  .kv { grid-template-columns: 100px 1fr; }
+}
+
+@media (max-width: 900px) {
+  .user-grid { grid-template-columns: 1fr; }
+  .panel-browse, .panel-now, .panel-queue { grid-column: span 12 !important; }
+  .panel-now { order: 1; }
+  .panel-queue { order: 2; }
+  .panel-browse { order: 3; }
+  .topbar { flex-direction: column; align-items: stretch; }
+  .topActions { gap: 8px; }
+  .topActions .pill { padding: 6px 10px; font-size: 11px; }
+  .panelHeader { align-items: flex-start; }
+  .panelHeader .hint { font-size: 11px; }
+  .panel-now .title { font-size: 16px; }
+  .panel-now .sub { font-size: 12px; }
+}
+
+@media (max-width: 640px) {
+  .topbar { align-items: flex-start; }
+  .brandText .headline { font-size: 18px; }
+  .row input, .input { min-width: 0; width: 100%; }
+  .row { flex-direction: column; align-items: stretch; }
+  .btnGroup { width: 100%; justify-content: space-between; }
+  .listrow { flex-direction: column; align-items: flex-start; }
+  .listrow .badge { align-self: flex-end; }
+}
+/* ===== PartyBox "Admin-style" shared UI ===== */
+
+:root{
+  --pb-text: rgba(255,255,255,0.92);
+  --pb-sub: rgba(255,255,255,0.70);
+  --pb-muted: rgba(255,255,255,0.55);
+
+  --pb-panel-bg: rgba(20,20,28,0.55);
+  --pb-panel-border: rgba(255,255,255,0.12);
+
+  --pb-card-bg: rgba(16,18,26,0.55);
+  --pb-card-border: rgba(255,255,255,0.10);
+
+  --pb-warn-bg: rgba(40,28,16,0.55);
+  --pb-warn-border: rgba(255,196,120,0.18);
+}
+
+.pb-panel{
+  background: var(--pb-panel-bg);
+  border: 1px solid var(--pb-panel-border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+}
+
+.pb-banner{
+  border-radius: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--pb-panel-border);
+  background: var(--pb-panel-bg);
+  color: var(--pb-text);
+}
+
+.pb-banner.warn{
+  background: var(--pb-warn-bg);
+  border-color: var(--pb-warn-border);
+}
+
+.pb-card{
+  border-radius: 16px;
+  border: 1px solid var(--pb-card-border);
+  background: var(--pb-card-bg);
+  color: var(--pb-text);
+  box-shadow: 0 14px 44px rgba(0,0,0,0.38);
+  transition: transform 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+
+.pb-card:hover{
+  transform: translateY(-1px);
+  border-color: rgba(255,255,255,0.16);
+  background: rgba(18,20,30,0.62);
+}
+
+.pb-card:disabled{
+  opacity: 0.45;
+  transform: none;
+  cursor: not-allowed;
+}
+
+.pb-card .title{
+  color: var(--pb-text);
+  font-weight: 700;
+}
+
+.pb-card .sub{
+  color: var(--pb-sub);
+}
+
+.pb-muted{
+  color: var(--pb-muted);
+}
+
+/* Ensure buttons/cards inherit readable color */
+button.pb-card{
+  color: var(--pb-text);
+}
+
+/* OPTIONAL tiny style.css addition (only if you don’t already have these helpers)
+   If pb-disabled / pb-toast / pb-queueRow already exist, skip this entirely. */
+
+.pb-disabled {
+  opacity: 0.55;
+  filter: saturate(0.75);
+  pointer-events: none;
+}
+
+.pb-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  transform: translateX(-50%);
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(20,20,24,0.78);
+  backdrop-filter: blur(10px);
+  z-index: 2000;
+  color: rgba(255,255,255,0.92);
+  font-weight: 650;
+}
+.pb-toast.ok { }
+.pb-toast.warn { }
+.pb-toast.danger { }
+
+.pb-queueRow {
+  display:flex;
+  gap:12px;
+  align-items:flex-start;
+  padding: 10px 10px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(20,20,24,0.45);
+}
+.pb-queueIdx {
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.25);
+  font-weight: 750;
+}
+.pb-queueTitle {
+  font-weight: 750;
+  color: rgba(255,255,255,0.92);
+}
+.pb-queueMeta {
+  margin-top: 2px;
+  font-size: 13px;
+  color: rgba(255,255,255,0.64);
+}

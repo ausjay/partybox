@@ -4,11 +4,18 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>{% block title %}PartyBox{% endblock %}</title>
+  <link rel="icon" href="/static/favicon.webp" type="image/webp" />
+  <link rel="apple-touch-icon" href="/static/partybox_logo.webp" />
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
   {% block body %}{% endblock %}
-  <script src="/static/app.js"></script>
+
+  {# Default JS for pages that want it (User page, etc). Admin can override. #}
+  {% block base_scripts %}
+    <script src="/static/app.js"></script>
+  {% endblock %}
+
   {% block scripts %}{% endblock %}
 </body>
 </html>
