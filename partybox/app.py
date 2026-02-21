@@ -416,7 +416,12 @@ def create_app() -> Flask:
             return jsonify({"ok": False, "error": "bad mode"}), 400
 
         try:
-            subprocess.run(["/usr/local/bin/audio-mode", mode], check=True)
+            cmd = ["sudo", "-n", "/usr/local/bin/audio-mode", mode]
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+        except subprocess.CalledProcessError as e:
+            detail = (e.stderr or e.stdout or "").strip()
+            msg = f"audio-mode failed: {detail or e}"
+            return jsonify({"ok": False, "error": msg}), 500
         except Exception as e:
             return jsonify({"ok": False, "error": f"audio-mode failed: {e}"}), 500
 
