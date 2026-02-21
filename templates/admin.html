@@ -149,22 +149,18 @@
         </div>
 
         <div class="panelInner">
-          <div id="queue_empty_card" class="card" style="{% if queue|length == 0 %}display:block;{% else %}display:none;{% endif %}">
+          {% set queue_only = queue|selectattr("status","equalto","queued")|list %}
+          <div id="queue_empty_card" class="card" style="{% if queue_only|length == 0 %}display:block;{% else %}display:none;{% endif %}">
             <div class="title">Queue is empty</div>
             <div class="sub">Add items or allow users to request.</div>
           </div>
 
-          <div id="queue_list" class="list" style="{% if queue|length == 0 %}display:none;{% else %}display:flex; flex-direction:column; gap:10px;{% endif %}">
-            {% for q in queue %}
-              <div class="listrow {% if q.status == 'playing' %}playing{% endif %}" data-queue-id="{{ q.id }}">
+          <div id="queue_list" class="list" style="{% if queue_only|length == 0 %}display:none;{% else %}display:flex; flex-direction:column; gap:10px;{% endif %}">
+            {% for q in queue_only %}
+              <div class="listrow" data-queue-id="{{ q.id }}">
                 <div class="grow">
                   <div class="title ellip">
-                    {% if q.status == 'playing' %}
-                      ▶ {{ q.title }}
-                      <span class="badge playing" style="margin-left:10px;">playing</span>
-                    {% else %}
-                      {{ loop.index }}. {{ q.title }}
-                    {% endif %}
+                    {{ loop.index }}. {{ q.title }}
                   </div>
 
                   <div class="sub ellip">
@@ -177,9 +173,7 @@
                   </div>
                 </div>
 
-                {% if q.status == 'queued' %}
-                  <button class="btn small ghost" onclick="promote({{ q.id }})">Promote</button>
-                {% endif %}
+                <button class="btn small ghost" onclick="promote({{ q.id }})">Promote</button>
                 <button class="btn small danger" onclick="removeFromQueue({{ q.id }})">Remove</button>
               </div>
             {% endfor %}
@@ -376,7 +370,7 @@
     const empty = document.getElementById("queue_empty_card");
     const cnt = document.getElementById("queue_count");
 
-    items = items || [];
+    items = (items || []).filter(q => q.status !== "playing");
     cnt.textContent = String(items.length);
 
     if (!items.length) {
