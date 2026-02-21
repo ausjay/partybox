@@ -162,6 +162,35 @@ def _extract_youtube_id_from_url(raw: str) -> Optional[str]:
     return None
 
 
+def _youtube_url_from_token(token: str) -> Optional[str]:
+    if not token:
+        return None
+    if "://" in token:
+        return token
+    return f"https://www.youtube.com/watch?v={token}"
+
+
+def _fetch_youtube_title(token: str) -> Optional[str]:
+    """
+    Best-effort title fetch via yt-dlp. Returns None on any failure.
+    """
+    url = _youtube_url_from_token(token)
+    if not url:
+        return None
+    try:
+        proc = subprocess.run(
+            ["yt-dlp", "--no-warnings", "--skip-download", "--print", "%(title)s", url],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=True,
+        )
+        title = (proc.stdout or "").strip()
+        return title or None
+    except Exception:
+        return None
+
+
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="../static", template_folder="../templates")
 
@@ -487,6 +516,8 @@ def create_app() -> Flask:
                 return jsonify({"ok": False, "error": "bad youtube id"}), 400
 
         title = (data.get("title") or "").strip()
+        if not title:
+            title = _fetch_youtube_title(youtube_token) or ""
         if not title:
             title = f"YouTube {youtube_token}" if "://" not in youtube_token else "YouTube Video"
 

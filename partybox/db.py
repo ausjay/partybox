@@ -320,8 +320,11 @@ def remove_from_queue(queue_id: int) -> None:
 
 
 def promote_queue(queue_id: int) -> None:
+    """
+    Move a queued item to the top of the queued list (but not above the playing item).
+    """
     with _connect() as conn:
-        rmin = conn.execute("SELECT COALESCE(MIN(pos), 0) AS m FROM queue WHERE status IN ('queued','playing')").fetchone()
+        rmin = conn.execute("SELECT COALESCE(MIN(pos), 0) AS m FROM queue WHERE status='queued'").fetchone()
         min_pos = int(rmin["m"])
         conn.execute("UPDATE queue SET pos=? WHERE id=? AND status='queued'", (min_pos - 1, queue_id))
         conn.commit()
