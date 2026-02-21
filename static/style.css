@@ -402,8 +402,20 @@ p { margin: 0; }
   .panelHeader .hint { font-size: 11px; }
   .panel-now .title { font-size: 15px; }
   .panel-now .sub { font-size: 11px; }
-  .panel-now .card { padding: 10px; }
-  .panel-now .card .title { font-size: 14px; line-height: 1.15; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .panel-now .card {
+    padding: 12px;
+    border-color: rgba(0,212,255,0.35);
+    background: linear-gradient(180deg, rgba(10,24,44,0.95), rgba(10,18,34,0.92));
+    box-shadow: 0 0 0 4px rgba(0,212,255,0.08), 0 16px 40px rgba(0,0,0,0.45);
+  }
+  .panel-now .card .title {
+    font-size: 16px;
+    line-height: 1.15;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
   .panel-now .card .sub { font-size: 11px; }
   .upnext-stack { display: block !important; }
   .upnext-stack .listrow .title { font-size: 14px; line-height: 1.15; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
