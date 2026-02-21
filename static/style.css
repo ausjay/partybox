@@ -405,7 +405,7 @@ p { margin: 0; }
   .panel-now .card { padding: 10px; }
   .panel-now .card .title { font-size: 14px; line-height: 1.15; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .panel-now .card .sub { font-size: 11px; }
-  .upnext-stack { display: block; }
+  .upnext-stack { display: block !important; }
   .upnext-stack .listrow .title { font-size: 14px; line-height: 1.15; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   .panel-queue { display: none; }
 }
