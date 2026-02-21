@@ -203,12 +203,7 @@
         title.className = "title ellip";
         title.textContent = item.title || "(untitled)";
 
-        const sub = document.createElement("div");
-        sub.className = "sub ellip";
-        sub.textContent = item.youtube_id || "";
-
         left.appendChild(title);
-        left.appendChild(sub);
 
         const badge = document.createElement("span");
         badge.className = "badge";
@@ -325,19 +320,23 @@
       const list = el("up_next_list");
       const more = el("up_next_more");
       const empty = el("up_next_empty");
+      const toggle = el("btn_upnext_toggle");
       list.innerHTML = "";
 
-      if (!items || !items.length) {
+      const clean = (items || []).filter(q => String(q.status || "").toLowerCase() !== "playing");
+
+      if (!clean.length) {
         empty.style.display = "block";
         list.style.display = "none";
         more.style.display = "none";
+        toggle.style.display = "none";
         return;
       }
 
       empty.style.display = "none";
       list.style.display = "flex";
 
-      const shown = UP_NEXT_EXPANDED ? items : items.slice(0, UP_NEXT_LIMIT);
+      const shown = UP_NEXT_EXPANDED ? clean : clean.slice(0, UP_NEXT_LIMIT);
       shown.forEach((q, idx) => {
         const row = document.createElement("div");
         row.className = "listrow";
@@ -349,12 +348,14 @@
         t.className = "title ellip";
         t.textContent = `${idx + 1}. ${q.title || "(untitled)"}`;
 
-        const meta = document.createElement("div");
-        meta.className = "sub ellip";
-        meta.textContent = q.note_text ? q.note_text : (q.youtube_id || "");
-
         left.appendChild(t);
-        left.appendChild(meta);
+
+        if (q.note_text) {
+          const meta = document.createElement("div");
+          meta.className = "sub ellip";
+          meta.textContent = q.note_text;
+          left.appendChild(meta);
+        }
 
         const b = document.createElement("span");
         b.className = "badge";
@@ -365,12 +366,58 @@
         list.appendChild(row);
       });
 
-      if (!UP_NEXT_EXPANDED && items.length > UP_NEXT_LIMIT) {
-        more.textContent = `Showing ${UP_NEXT_LIMIT} of ${items.length}`;
-        more.style.display = "block";
+      if (clean.length > UP_NEXT_LIMIT) {
+        toggle.style.display = "inline-flex";
+        if (!UP_NEXT_EXPANDED) {
+          more.textContent = `Showing ${UP_NEXT_LIMIT} of ${clean.length}`;
+          more.style.display = "block";
+        } else {
+          more.style.display = "none";
+        }
       } else {
+        toggle.style.display = "none";
         more.style.display = "none";
       }
+    }
+
+    function renderQueue(items) {
+      const list = el("queue_list");
+      list.innerHTML = "";
+
+      if (!items || !items.length) {
+        el("queue_empty").style.display = "block";
+        return;
+      }
+      el("queue_empty").style.display = "none";
+
+      items.forEach((q, idx) => {
+        const row = document.createElement("div");
+        row.className = "listrow";
+
+        const left = document.createElement("div");
+        left.className = "grow";
+
+        const t = document.createElement("div");
+        t.className = "title ellip";
+        t.textContent = `${idx + 1}. ${q.title || "(untitled)"}`;
+
+        left.appendChild(t);
+
+        if (q.note_text) {
+          const meta = document.createElement("div");
+          meta.className = "sub ellip";
+          meta.textContent = q.note_text;
+          left.appendChild(meta);
+        }
+
+        const b = document.createElement("span");
+        b.className = "badge";
+        b.textContent = q.status ? String(q.status).toUpperCase() : "QUEUED";
+
+        row.appendChild(left);
+        row.appendChild(b);
+        list.appendChild(row);
+      });
     }
 
     async function pollState() {
@@ -394,6 +441,7 @@
         const r = await fetch("/api/queue", { cache: "no-store" });
         const j = await r.json();
         renderUpNext(j.items || []);
+        renderQueue(j.items || []);
       } catch (e) {}
     }
 
