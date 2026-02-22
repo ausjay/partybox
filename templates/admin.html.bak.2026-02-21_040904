@@ -4,7 +4,7 @@
 {% block title %}Admin — PartyBox{% endblock %}
 
 {% block body %}
-<div class="appBg adminPage">
+<div class="appBg">
   <div class="page">
 
     <!-- Top Bar -->
@@ -18,19 +18,19 @@
       </div>
 
       <div class="topActions">
-        <div class="pill" title="System health">
-          <span id="top_health_dot" class="dot warn"></span>
-          <span id="top_health_text">System Health</span>
+        <div class="pill">
+          <span class="dot ok"></span>
+          <span>System Online</span>
         </div>
 
-        <div class="pill" title="Mode">
-          <span id="top_mode_dot" class="dot {% if av_mode != 'spotify' and paused %}warn{% else %}ok{% endif %}"></span>
-          <span id="top_mode_text">{% if av_mode == 'spotify' %}Mode: Spotify{% elif paused %}Mode: PartyBox • Paused{% else %}Mode: PartyBox{% endif %}</span>
+        <div class="pill" title="A/V Mode (partybox vs spotify)">
+          <span id="top_av_dot" class="dot {% if av_mode == 'spotify' %}warn{% else %}ok{% endif %}"></span>
+          <span>Mode: <b id="top_av_text" style="font-weight:800;">{{ 'Spotify' if av_mode == 'spotify' else 'PartyBox' }}</b></span>
         </div>
 
-        <div id="top_lock_pill" class="pill" title="Requests lock" style="{% if not locked %}display:none;{% endif %}">
-          <span id="top_lock_dot" class="dot bad"></span>
-          <span id="top_lock_text"><b style="font-weight:800;">Requests Locked</b></span>
+        <div class="pill" title="Requests lock">
+          <span id="top_lock_dot" class="dot {% if locked %}bad{% else %}ok{% endif %}"></span>
+          <span id="top_lock_text">{% if locked %}<b style="font-weight:800;">Requests Locked</b>{% else %}Requests Open{% endif %}</span>
         </div>
       </div>
     </div>
@@ -39,7 +39,7 @@
     <div class="grid">
 
       <!-- Left: Now Playing + Controls -->
-      <div class="panel panel-now" style="grid-column: span 6;">
+      <div class="panel" style="grid-column: span 6;">
         <div class="panelHeader">
           <div class="kicker">Now Playing</div>
           <div class="hint" id="now_header_hint">
@@ -95,14 +95,14 @@
               <div class="hint">Big buttons for bar screen</div>
             </div>
 
-            <div class="btnGroup playbackControls">
+            <div class="btnGroup">
               <button id="btn_pause_resume" class="btn {% if paused %}primary{% else %}pink{% endif %}" onclick="togglePauseResume()">
                 {% if paused %}Resume{% else %}Pause{% endif %}
               </button>
 
               <button class="btn ghost" onclick="skip()">Skip</button>
 
-              <button class="btn danger btn-stop" onclick="tvStop()">Stop (pause + clear)</button>
+              <button class="btn danger" onclick="tvStop()">Stop (pause + clear)</button>
             </div>
 
             <div style="height:12px;"></div>
@@ -112,7 +112,7 @@
               <div class="hint">Mute affects PartyBox output</div>
             </div>
 
-            <div class="btnGroup audioControls">
+            <div class="btnGroup">
               <button id="btn_mute" class="btn {% if muted %}primary{% else %}ghost{% endif %}" onclick="toggleMute()">
                 {% if muted %}Unmute{% else %}Mute{% endif %}
               </button>
@@ -128,7 +128,7 @@
               <div class="hint">Lock requests during “Spotify mode” or chaos</div>
             </div>
 
-            <div class="btnGroup queueControls">
+            <div class="btnGroup">
               <button id="btn_lock" class="btn {% if locked %}primary{% else %}ghost{% endif %}" onclick="toggleLock()">
                 {{ "Unlock Requests" if locked else "Lock Requests" }}
               </button>
@@ -142,25 +142,29 @@
       </div>
 
       <!-- Right: Queue (LIVE) -->
-      <div class="panel panel-queue" style="grid-column: span 6;">
+      <div class="panel" style="grid-column: span 6;">
         <div class="panelHeader">
           <div class="kicker">Queue</div>
           <div class="hint"><span id="queue_count">{{ queue|length }}</span> item(s)</div>
         </div>
 
         <div class="panelInner">
-          {% set queue_only = queue|selectattr("status","equalto","queued")|list %}
-          <div id="queue_empty_card" class="card" style="{% if queue_only|length == 0 %}display:block;{% else %}display:none;{% endif %}">
+          <div id="queue_empty_card" class="card" style="{% if queue|length == 0 %}display:block;{% else %}display:none;{% endif %}">
             <div class="title">Queue is empty</div>
             <div class="sub">Add items or allow users to request.</div>
           </div>
 
-          <div id="queue_list" class="list" style="{% if queue_only|length == 0 %}display:none;{% else %}display:flex; flex-direction:column; gap:10px;{% endif %}">
-            {% for q in queue_only %}
-              <div class="listrow" data-queue-id="{{ q.id }}">
+          <div id="queue_list" class="list" style="{% if queue|length == 0 %}display:none;{% else %}display:flex; flex-direction:column; gap:10px;{% endif %}">
+            {% for q in queue %}
+              <div class="listrow {% if q.status == 'playing' %}playing{% endif %}" data-queue-id="{{ q.id }}">
                 <div class="grow">
                   <div class="title ellip">
-                    {{ loop.index }}. {{ q.title }}
+                    {% if q.status == 'playing' %}
+                      ▶ {{ q.title }}
+                      <span class="badge playing" style="margin-left:10px;">playing</span>
+                    {% else %}
+                      {{ loop.index }}. {{ q.title }}
+                    {% endif %}
                   </div>
 
                   <div class="sub ellip">
@@ -173,7 +177,9 @@
                   </div>
                 </div>
 
-                <button class="btn small ghost" onclick="promote({{ q.id }})">Promote</button>
+                {% if q.status == 'queued' %}
+                  <button class="btn small ghost" onclick="promote({{ q.id }})">Promote</button>
+                {% endif %}
                 <button class="btn small danger" onclick="removeFromQueue({{ q.id }})">Remove</button>
               </div>
             {% endfor %}
@@ -182,7 +188,7 @@
       </div>
 
       <!-- Catalog Add -->
-      <div class="panel panel-add" style="grid-column: span 6;">
+      <div class="panel" style="grid-column: span 6;">
         <div class="panelHeader">
           <div class="kicker">Add to Catalog</div>
           <div class="hint">YouTube URL/ID or Local.mp4</div>
@@ -208,7 +214,7 @@
       </div>
 
       <!-- Catalog List (instant enable/disable UI) -->
-      <div class="panel panel-catalog" style="grid-column: span 6;">
+      <div class="panel" style="grid-column: span 6;">
         <div class="panelHeader">
           <div class="kicker">Catalog</div>
           <div class="hint"><span id="catalog_count">{{ items|length }}</span> item(s)</div>
@@ -230,19 +236,12 @@
                   </div>
                 </div>
 
-                <div class="btnGroup">
-                  <button
-                    class="btn small {% if it.enabled %}ghost{% else %}primary{% endif %}"
-                    data-enable-btn
-                    onclick="setEnabled({{ it.id }}, {{ 0 if it.enabled else 1 }})">
-                    {{ "Disable" if it.enabled else "Enable" }}
-                  </button>
-                  <button class="btn small danger icon" title="Delete from catalog" onclick="deleteCatalog({{ it.id }})">
-                    <svg viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M4 7h16M9 7V5h6v2M9 10v7M12 10v7M15 10v7M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
-                    </svg>
-                  </button>
-                </div>
+                <button
+                  class="btn small {% if it.enabled %}ghost{% else %}primary{% endif %}"
+                  data-enable-btn
+                  onclick="setEnabled({{ it.id }}, {{ 0 if it.enabled else 1 }})">
+                  {{ "Disable" if it.enabled else "Enable" }}
+                </button>
               </div>
             {% endfor %}
           </div>
@@ -289,33 +288,22 @@
 
   // ---------- Live UI helpers ----------
   function setTopLock(locked) {
-    const pill = document.getElementById("top_lock_pill");
     const dot = document.getElementById("top_lock_dot");
     const txt = document.getElementById("top_lock_text");
-    pill.style.display = locked ? "" : "none";
     dot.classList.remove("ok","bad","warn");
-    dot.classList.add("bad");
-    txt.innerHTML = "<b style=\"font-weight:800;\">Requests Locked</b>";
+    dot.classList.add(locked ? "bad" : "ok");
+    txt.innerHTML = locked ? "<b style=\"font-weight:800;\">Requests Locked</b>" : "Requests Open";
     const btn = document.getElementById("btn_lock");
     btn.className = "btn " + (locked ? "primary" : "ghost");
     btn.textContent = locked ? "Unlock Requests" : "Lock Requests";
   }
 
-  function setTopMode(avMode, paused) {
-    const dot = document.getElementById("top_mode_dot");
-    const txt = document.getElementById("top_mode_text");
+  function setTopAv(avMode) {
+    const dot = document.getElementById("top_av_dot");
+    const txt = document.getElementById("top_av_text");
     dot.classList.remove("ok","warn","bad");
-
-    if (avMode === "spotify") {
-      dot.classList.add("ok");
-      txt.textContent = "Mode: Spotify";
-    } else if (paused) {
-      dot.classList.add("warn");
-      txt.textContent = "Mode: PartyBox • Paused";
-    } else {
-      dot.classList.add("ok");
-      txt.textContent = "Mode: PartyBox";
-    }
+    dot.classList.add(avMode === "spotify" ? "warn" : "ok");
+    txt.textContent = (avMode === "spotify") ? "Spotify" : "PartyBox";
 
     // highlight the mode buttons
     const pb = document.getElementById("btn_av_partybox");
@@ -324,104 +312,10 @@
     sp.className = "btn " + (avMode === "spotify" ? "primary" : "ghost");
   }
 
-  function setTopHealth(ok, summary) {
-    const dot = document.getElementById("top_health_dot");
-    const txt = document.getElementById("top_health_text");
-    const pill = dot ? dot.closest(".pill") : null;
-    dot.classList.remove("ok","warn","bad");
-    dot.classList.add(ok ? "ok" : "bad");
-    if (ok) {
-      txt.textContent = "System Health";
-    } else {
-      const failed = Number((summary && summary.failed) || 0);
-      txt.textContent = failed > 0 ? `System Health Degraded (${failed})` : "System Health Degraded";
-    }
-    if (pill) {
-      const failedChecks = (summary && Array.isArray(summary.failed_checks)) ? summary.failed_checks : [];
-      pill.title = ok ? "System health" : `System health degraded: ${failedChecks.join(", ") || "unknown"}`;
-    }
-  }
-
-  function buildHealthTooltip(j) {
-    const checks = (j && j.checks) ? j.checks : {};
-    const lines = [];
-    const yn = (v) => v ? "OK" : "FAIL";
-
-    const dbConnect = checks.db_connect || {};
-    lines.push(`DB connect: ${yn(!!dbConnect.ok)}`);
-
-    const dbQuery = checks.db_query || {};
-    lines.push(`DB query: ${yn(!!dbQuery.ok)}`);
-
-    const services = checks.services || {};
-    const units = services.units || {};
-    const unitNames = Object.keys(units).sort();
-    if (unitNames.length) {
-      lines.push(`Services: ${yn(!!services.ok)}`);
-      unitNames.forEach((name) => {
-        const s = units[name] || {};
-        const bits = [];
-        bits.push(yn(!!s.ok));
-        if (s.active_state) bits.push(s.active_state);
-        if (s.sub_state) bits.push(s.sub_state);
-        if (s.user) bits.push(`user=${s.user}`);
-        if (s.expected_user) bits.push(`expected=${s.expected_user}`);
-        lines.push(`- ${name}: ${bits.join(", ")}`);
-      });
-    }
-
-    const hb = checks.tv_heartbeat || {};
-    if (Object.keys(hb).length) {
-      const age = Number(hb.age_seconds || 0);
-      const max = Number(hb.max_age_seconds || 0);
-      lines.push(`TV heartbeat: ${yn(!!hb.ok)} (age ${age}s, max ${max}s)`);
-    }
-
-    const internet = checks.internet || {};
-    if (Object.keys(internet).length) {
-      lines.push(`Internet: ${yn(!!internet.ok)}`);
-      const internetChecks = internet.checks || {};
-      const tcp = internetChecks.tcp_1_1_1_1_53 || {};
-      const https = internetChecks.https_generate_204 || {};
-      if (Object.keys(tcp).length) lines.push(`- TCP 1.1.1.1:53: ${yn(!!tcp.ok)}`);
-      if (Object.keys(https).length) {
-        const code = https.status ? ` (${https.status})` : "";
-        lines.push(`- HTTPS generate_204: ${yn(!!https.ok)}${code}`);
-      }
-    }
-
-    const fs = checks.filesystem || {};
-    const fsPaths = fs.paths || {};
-    const fsPathNames = Object.keys(fsPaths).sort();
-    if (fsPathNames.length) {
-      lines.push(`Filesystem: ${yn(!!fs.ok)}`);
-      fsPathNames.forEach((p) => {
-        const d = fsPaths[p] || {};
-        if (d.error) {
-          lines.push(`- ${p}: FAIL (${d.error})`);
-          return;
-        }
-        lines.push(`- ${p}: ${yn(!!d.ok)} (${d.used_pct}% used, max ${d.max_used_pct}%)`);
-      });
-    }
-
-    const mem = checks.memory || {};
-    if (Object.keys(mem).length) {
-      if (mem.error) {
-        lines.push(`Memory: FAIL (${mem.error})`);
-      } else {
-        lines.push(`Memory: ${yn(!!mem.ok)} (${mem.used_pct}% used, max ${mem.max_used_pct}%)`);
-      }
-    }
-
-    return lines.join("\n");
-  }
-
   function setPaused(paused, muted) {
     const btn = document.getElementById("btn_pause_resume");
     btn.className = "btn " + (paused ? "primary" : "pink");
     btn.textContent = paused ? "Resume" : "Pause";
-    setTopMode(STATE.av_mode, paused);
 
     // Update header badges
     const hint = document.getElementById("now_header_hint");
@@ -475,7 +369,7 @@
     const empty = document.getElementById("queue_empty_card");
     const cnt = document.getElementById("queue_count");
 
-    items = (items || []).filter(q => q.status !== "playing");
+    items = items || [];
     cnt.textContent = String(items.length);
 
     if (!items.length) {
@@ -587,23 +481,6 @@
         updateCatalogRowEnabled(id, !enabled);
         setStatus('Error: ' + (e.message || 'unknown'));
       });
-  }
-
-  function deleteCatalog(id) {
-    if (!confirm("Delete this catalog item? This also removes it from the queue.")) return;
-    setStatus("");
-    post('/api/admin/catalog_delete', {id})
-      .then(j => {
-        if (!j.ok) throw new Error(j.error || "Delete failed");
-        const row = document.querySelector(`[data-catalog-id="${id}"]`);
-        if (row) row.remove();
-        const cnt = document.getElementById("catalog_count");
-        if (cnt) cnt.textContent = String(Math.max(0, Number(cnt.textContent || "0") - 1));
-        setStatus("Deleted.");
-        pollQueue();
-        pollState();
-      })
-      .catch(e => setStatus('Error: ' + (e.message || 'unknown')));
   }
 
   function toggleLock() {
@@ -721,7 +598,7 @@
     setStatus("");
     // optimistic
     STATE.av_mode = mode;
-    setTopMode(mode, STATE.paused);
+    setTopAv(mode);
 
     post('/api/admin/av_mode', {mode})
       .then(() => { setStatus(`Mode set: ${mode}`); pollState(); })
@@ -756,7 +633,7 @@
       };
 
       setTopLock(STATE.locked);
-      setTopMode(STATE.av_mode, STATE.paused);
+      setTopAv(STATE.av_mode);
       setMuted(STATE.muted);
       setPaused(STATE.paused, STATE.muted);
       updateNowCardFromState({
@@ -772,27 +649,12 @@
     }
   }
 
-  async function pollHealth() {
-    try {
-      const r = await fetch(`/api/admin/health?key=${encodeURIComponent(KEY)}`, { cache: "no-store" });
-      const j = await r.json();
-      setTopHealth(!!j.ok, j.summary || {});
-      const dot = document.getElementById("top_health_dot");
-      const pill = dot ? dot.closest(".pill") : null;
-      if (pill) pill.title = buildHealthTooltip(j);
-    } catch (e) {
-      setTopHealth(false, { failed: 1, failed_checks: ["health_endpoint"] });
-    }
-  }
-
   // init
   pollState();
   pollQueue();
-  pollHealth();
 
   // keep it live
   setInterval(pollState, 1000);
   setInterval(pollQueue, 1200);
-  setInterval(pollHealth, 5000);
 </script>
 {% endblock %}

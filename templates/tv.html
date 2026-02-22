@@ -3,159 +3,166 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PartyBox TV — PartyBox</title>
-  <style>
-    html, body { margin:0; padding:0; background:#000; height:100%; overflow:hidden; }
-    #wrap { position:relative; width:100%; height:100%; display:flex; flex-direction:column; }
-    #top {
-      padding:18px 22px;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      color:#fff;
-      background: linear-gradient(rgba(0,0,0,0.72), rgba(0,0,0,0));
-      font-size: 22px;
-      text-shadow: 0 2px 10px rgba(0,0,0,0.9);
-    }
-    #main {
-      flex:1;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      padding:24px;
-      color:#fff;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      text-shadow: 0 2px 10px rgba(0,0,0,0.9);
-    }
-    .card {
-      max-width: 980px;
-      width: 100%;
-      border: 1px solid rgba(255,255,255,0.12);
-      border-radius: 16px;
-      padding: 22px;
-      background: rgba(20,20,24,0.55);
-    }
-    .h1 { font-size: 44px; margin: 0 0 10px 0; }
-    .h2 { font-size: 26px; margin: 0 0 10px 0; opacity: 0.95; }
-    .p  { font-size: 22px; margin: 10px 0; opacity: 0.95; line-height: 1.25; }
-    .muted { opacity: 0.72; }
-    .pill {
-      display:inline-block;
-      padding:6px 12px;
-      border-radius: 999px;
-      border: 1px solid rgba(255,255,255,0.18);
-      background: rgba(0,0,0,0.25);
-      font-size: 16px;
-      margin-left: 10px;
-      vertical-align: middle;
-    }
-    #note {
-      padding:18px 22px;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-      color:#fff;
-      background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,0.72));
-      font-size: 24px;
-      display:none;
-      text-shadow: 0 2px 10px rgba(0,0,0,0.9);
-    }
-  </style>
+  <title>TV — PartyBox</title>
+  <link rel="icon" href="/static/favicon.webp" type="image/webp" />
+  <link rel="apple-touch-icon" href="/static/partybox_logo.webp" />
+  <link rel="stylesheet" href="/static/style.css" />
 </head>
-<body>
-<div id="wrap">
-  <div id="top">PartyBox TV <span id="modepill" class="pill">…</span></div>
 
-  <div id="main">
-    <div class="card">
-      <div id="title" class="h1">Loading…</div>
-      <div id="line1" class="h2 muted"></div>
-      <div id="line2" class="p"></div>
-      <div id="line3" class="p muted"></div>
+<body class="tvPage">
+  <div class="tv">
+    <div class="playerWrap">
+      <div id="player"></div>
     </div>
   </div>
 
-  <div id="note"></div>
-</div>
+  <!-- Top-left status pills -->
+  <div style="position: fixed; left: 16px; top: 16px; display:flex; gap:10px; align-items:center; z-index: 50;">
+    <div class="tvBrandIcon" aria-hidden="true"></div>
+    <div class="pill">
+      <span id="tv_dot" class="dot warn"></span>
+      <span id="mode_label">PartyBox</span>
+    </div>
+    <div class="pill">
+      <span class="muted">Now</span>
+      <span id="now_label" class="ellip" style="max-width: 70vw;">—</span>
+    </div>
+  </div>
 
-<script>
-const modepill = document.getElementById("modepill");
-const title = document.getElementById("title");
-const line1 = document.getElementById("line1");
-const line2 = document.getElementById("line2");
-const line3 = document.getElementById("line3");
-const note  = document.getElementById("note");
+  <!-- Center overlay panel -->
+  <div id="overlay_wrap" style="position: fixed; inset: 0; display:none; align-items:center; justify-content:center; z-index: 40; pointer-events:none;">
+    <div class="panel" style="width: min(860px, calc(100vw - 56px));">
+      <div class="panelHeader">
+        <div>
+          <div class="kicker" id="ov_kicker">PAUSED</div>
+          <div class="hint" id="ov_hint">—</div>
+        </div>
+        <span id="ov_badge" class="badge paused">Paused</span>
+      </div>
+      <div class="panelInner">
+        <div class="card">
+          <div class="title" id="ov_title">No selection</div>
+          <div class="sub" id="ov_sub">Admin paused playback</div>
+        </div>
+      </div>
+    </div>
+  </div>
 
-async function apiState() {
-  const r = await fetch("/api/state", {cache:"no-store"});
-  if (!r.ok) throw new Error(`/api/state -> ${r.status}`);
-  return await r.json();
-}
+  <script>
+    let STATE = null;
 
-function setNote(text) {
-  const t = (text || "").trim();
-  if (t) {
-    note.textContent = t;
-    note.style.display = "block";
-  } else {
-    note.style.display = "none";
-  }
-}
+    const el = (id) => document.getElementById(id);
 
-function renderSpotify(state) {
-  modepill.textContent = "Spotify Mode";
-  title.textContent = "Spotify Time";
-  line1.textContent = "Anyone can connect (simple Spotify Connect).";
-  line2.textContent = "Open Spotify → Devices → select: UJ-Partybox";
-  line3.textContent = "This stays active until Admin switches back to Partybox.";
-  setNote("");
-}
+    function setModePill(mode, tvOnline, avMode, locked) {
+      const dot = el("tv_dot");
+      dot.classList.remove("ok","warn","bad");
 
-function renderPartybox(state) {
-  modepill.textContent = "Partybox Mode";
+      // color rules
+      if (!tvOnline) dot.classList.add("bad");
+      else if ((avMode || "").toLowerCase() === "spotify") dot.classList.add("warn");
+      else if (mode === "paused") dot.classList.add("warn");
+      else dot.classList.add("ok");
 
-  if (state.paused) {
-    title.textContent = "PAUSED";
-    line1.textContent = state.now ? `Now: ${state.now.title}` : "No selection";
-    line2.textContent = "Admin paused playback.";
-    line3.textContent = "";
-    setNote("");
-    return;
-  }
+      // label rules
+      let label = "PartyBox";
+      if ((avMode || "").toLowerCase() === "spotify") label = "Spotify";
+      else if (locked) label = "Locked";
+      else if (mode === "paused") label = "Paused";
+      else label = "PartyBox";
 
-  if (!state.now) {
-    title.textContent = "Idle";
-    line1.textContent = "No videos available.";
-    line2.textContent = "Add items in /admin or request from /u";
-    line3.textContent = "";
-    setNote("");
-    return;
-  }
+      el("mode_label").textContent = label;
+    }
 
-  const now = state.now;
-  const up  = state.up_next;
+    function showOverlay(show, kicker, hint, title, sub, badgeText) {
+      const wrap = el("overlay_wrap");
+      if (!show) { wrap.style.display = "none"; return; }
+      wrap.style.display = "flex";
 
-  title.textContent = "Now Playing";
-  line1.textContent = now.title || "Unknown";
-  line2.textContent = up && up.title ? `Up Next: ${up.title}` : "";
-  line3.textContent = state.mode ? `Mode: ${state.mode}` : "";
-  setNote(now.note_text || "");
-}
+      el("ov_kicker").textContent = kicker || "";
+      el("ov_hint").textContent = hint || "";
+      el("ov_title").textContent = title || "";
+      el("ov_sub").textContent = sub || "";
 
-async function poll() {
-  try {
-    const state = await apiState();
-    const av = (state.av_mode || "partybox").toLowerCase();
-    if (av === "spotify") renderSpotify(state);
-    else renderPartybox(state);
-  } catch (e) {
-    modepill.textContent = "error";
-    title.textContent = "TV error";
-    line1.textContent = String(e);
-    line2.textContent = "";
-    line3.textContent = "";
-    setNote("");
-  }
-}
+      const b = el("ov_badge");
+      b.textContent = badgeText || "";
+      b.className = "badge";
+      if ((kicker || "").toLowerCase().includes("paused")) b.classList.add("paused");
+      if ((kicker || "").toLowerCase().includes("spotify")) b.classList.add("paused");
+      if ((kicker || "").toLowerCase().includes("locked")) b.classList.add("locked");
+    }
 
-setInterval(poll, 1000);
-poll();
-</script>
+    function updateFromState(tvOnline) {
+      if (!STATE) return;
+
+      const av = (STATE.av_mode || "partybox").toLowerCase();
+      const locked = !!STATE.locked;
+      const paused = !!STATE.paused;
+      const mode = (STATE.mode || "").toLowerCase();
+
+      const nowTitle = (STATE.now && STATE.now.title) ? STATE.now.title : "—";
+      el("now_label").textContent = nowTitle;
+
+      setModePill(mode, tvOnline, av, locked);
+
+      // Overlay rules:
+      // - Spotify: show Spotify overlay
+      // - Locked: show locked overlay
+      // - Paused + no selection: centered paused/no selection/admin paused
+      // - Paused + has selection: show paused + title
+      // - Otherwise: no overlay
+      if (av === "spotify") {
+        showOverlay(true, "SPOTIFY", "Audio mode", "Spotify active", "Video playback is disabled while Spotify is active.", "Spotify");
+        return;
+      }
+
+      if (locked) {
+        showOverlay(true, "LOCKED", "Requests", "Requests locked", "Only Admin can add to the queue right now.", "Locked");
+        return;
+      }
+
+      if (paused) {
+        if (!STATE.now) {
+          showOverlay(true, "PAUSED", "No selection", "No selection", "Admin paused playback", "Paused");
+        } else {
+          showOverlay(true, "PAUSED", "Holding selection", STATE.now.title || "Selection", "Admin paused playback", "Paused");
+        }
+        return;
+      }
+
+      showOverlay(false);
+    }
+
+    async function pollState() {
+      try {
+        const r = await fetch("/api/state", { cache: "no-store" });
+        STATE = await r.json();
+      } catch (e) {
+        // don't change UI on transient errors
+      }
+    }
+
+    async function pollTvStatus() {
+      // determines online via heartbeat age
+      try {
+        const r = await fetch("/api/tv/status", { cache: "no-store" });
+        const j = await r.json();
+        const st = (j && j.ok) ? j.status : null;
+        const now = Math.floor(Date.now() / 1000);
+        const online = !!(st && st.ts && (now - st.ts) <= 15);
+        updateFromState(online);
+      } catch (e) {
+        // if we can’t read tv/status, assume offline indicator but still show state info
+        updateFromState(false);
+      }
+    }
+
+    async function tick() {
+      await pollState();
+      await pollTvStatus();
+    }
+
+    tick();
+    setInterval(tick, 1000);
+  </script>
 </body>
 </html>

@@ -382,6 +382,60 @@ p { margin: 0; }
 .playerWrap { flex:1; }
 #player { width:100%; height:100%; }
 
+.tvPage .tv {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(1000px 620px at 16% 18%, rgba(0,212,255,0.16), transparent 60%),
+    radial-gradient(900px 560px at 82% 30%, rgba(255,45,175,0.12), transparent 62%),
+    radial-gradient(960px 600px at 50% 92%, rgba(194,0,255,0.10), transparent 60%),
+    #060b1a;
+}
+
+.tvPage .tv::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.06;
+  background-image:
+    linear-gradient(to right, rgba(0,212,255,0.45) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,45,175,0.35) 1px, transparent 1px);
+  background-size: 90px 90px;
+}
+
+.tvPage .playerWrap::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(52vw, 520px);
+  height: min(52vw, 520px);
+  transform: translate(-50%, -50%);
+  background-image: var(--brand-logo);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  opacity: 0.08;
+  pointer-events: none;
+}
+
+.tvBrandIcon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(28,39,70,0.9);
+  background-color: rgba(14,20,38,0.82);
+  background-image:
+    var(--brand-logo),
+    radial-gradient(circle at 30% 30%, rgba(0,212,255,0.34), transparent 60%),
+    radial-gradient(circle at 70% 60%, rgba(255,45,175,0.30), transparent 62%);
+  background-size: cover, 140% 140%, 140% 140%;
+  background-position: center, 30% 30%, 70% 60%;
+  background-blend-mode: screen, normal, normal;
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.25), 0 16px 40px rgba(0,0,0,0.34);
+}
+
 .toast {
   position: fixed;
   left: 16px;
@@ -449,6 +503,132 @@ p { margin: 0; }
   .listrow { flex-direction: column; align-items: flex-start; }
   .listrow .badge { align-self: flex-start; }
   .listrow .ellip { white-space: normal; overflow: visible; text-overflow: clip; }
+}
+
+/* =========================================
+   Admin Mobile (phone-first compact mode)
+   ========================================= */
+
+@media (max-width: 760px) {
+  html, body {
+    overflow-x: hidden;
+  }
+
+  .adminPage .page {
+    padding: 10px;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  .adminPage .brandText .tagline {
+    display: none;
+  }
+
+  .adminPage .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 60;
+    padding: 8px 0 10px;
+    margin-bottom: 10px;
+    background: linear-gradient(180deg, rgba(7,11,26,0.96), rgba(7,11,26,0.72));
+    backdrop-filter: blur(8px);
+  }
+
+  .adminPage .topActions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    width: 100%;
+    padding-bottom: 2px;
+    scrollbar-width: thin;
+  }
+
+  .adminPage .topActions .pill {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+
+  .adminPage .grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .adminPage .grid > .panel {
+    grid-column: 1 / -1 !important;
+  }
+
+  .adminPage .panel-now { order: 1; }
+  .adminPage .panel-queue { order: 2; }
+  .adminPage .panel-add { order: 3; display: none; }
+  .adminPage .panel-catalog { order: 4; display: none; }
+
+  .adminPage .panelHeader {
+    padding: 12px 12px 9px;
+  }
+
+  .adminPage .panelInner {
+    padding: 12px;
+  }
+
+  .adminPage .panel,
+  .adminPage .card,
+  .adminPage .listrow {
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  .adminPage .title {
+    font-size: 15px;
+    line-height: 1.25;
+  }
+
+  .adminPage .sub {
+    font-size: 12px;
+  }
+
+  .adminPage .btn {
+    min-height: 48px;
+    font-size: 16px;
+    border-radius: 12px;
+    padding: 12px 14px;
+    min-width: 0;
+  }
+
+  .adminPage .btn.small {
+    min-height: 44px;
+    font-size: 15px;
+    padding: 10px 12px;
+  }
+
+  .adminPage .playbackControls,
+  .adminPage .audioControls,
+  .adminPage .queueControls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    width: 100%;
+  }
+
+  .adminPage .playbackControls .btn-stop {
+    grid-column: 1 / -1;
+  }
+
+  .adminPage .audioControls #btn_av_spotify {
+    grid-column: 1 / -1;
+  }
+
+  .adminPage .playbackControls .btn,
+  .adminPage .audioControls .btn,
+  .adminPage .queueControls .btn {
+    width: 100%;
+  }
+
+  .adminPage .panel-queue .listrow {
+    align-items: flex-start;
+  }
+
+  .adminPage .panel-queue .listrow .btn {
+    min-width: 110px;
+  }
 }
 /* ===== PartyBox "Admin-style" shared UI ===== */
 
