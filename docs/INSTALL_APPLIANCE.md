@@ -15,6 +15,7 @@ This machine runs:
 
 - `partybox.service` → Flask API (port 5000)
 - `partybox-player.service` → MPV controller
+- `nginx` → HTTP :80 reverse proxy to Flask (`127.0.0.1:5000`)
 - XFCE desktop (lightweight)
 - LightDM (auto-login)
 - Always-on HDMI output
@@ -177,6 +178,8 @@ Create:
 sudo nano /etc/systemd/system/partybox.service
 ```
 
+If your repo lives at `/home/user/projects/partybox` (current `partybox` host reality), use that path in `WorkingDirectory` and `ExecStart`.
+
 ```ini
 [Unit]
 Description=Partybox (Flask)
@@ -209,7 +212,77 @@ curl http://127.0.0.1:5000/api/state | jq .
 
 ---
 
-# 9. Create Player Service (MPV Controller)
+# 9. Configure nginx Public HTTP Endpoint
+
+Create:
+
+```bash
+sudo nano /etc/nginx/sites-available/partybox
+```
+
+Add:
+
+```nginx
+server {
+  listen 80;
+  server_name partybox.local;
+
+  client_max_body_size 10m;
+
+  location = / {
+    return 302 /user;
+  }
+
+  location = /user {
+    return 302 /u;
+  }
+
+  location / {
+    proxy_pass http://127.0.0.1:5000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+}
+```
+
+Enable site and remove default:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/partybox /etc/nginx/sites-enabled/partybox
+sudo rm -f /etc/nginx/sites-enabled/default
+```
+
+Validate and reload:
+
+```bash
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Verification:
+
+```bash
+curl -I http://partybox.local/
+curl -I http://partybox.local/user
+curl -I http://partybox.local/u
+curl -I http://partybox.local/tv
+curl -I "http://partybox.local/admin?key=JBOX"
+```
+
+Expected status:
+
+- `/` -> `302` to `/user`
+- `/user` -> `302` to `/u`
+- `/u` -> `200`
+- `/tv` -> `200`
+- `/admin?key=JBOX` -> `200`
+
+Use `http://partybox.local/user` for QR codes and signage.
+No HTTPS required.
+
+---
+
+# 10. Create Player Service (MPV Controller)
 
 Create:
 
@@ -246,7 +319,7 @@ sudo systemctl start partybox-player.service
 
 ---
 
-# 10. Ensure Display Never Sleeps
+# 11. Ensure Display Never Sleeps
 
 As `partybox` user:
 
@@ -270,7 +343,7 @@ Add to XFCE startup if needed.
 
 ---
 
-# 11. Appliance Behavior Rules
+# 12. Appliance Behavior Rules
 
 HDMI display must ALWAYS show:
 
@@ -284,7 +357,7 @@ Never show terminal.
 
 ---
 
-# 12. Access Local Console
+# 13. Access Local Console
 
 If needed:
 
@@ -294,7 +367,7 @@ If needed:
 
 ---
 
-# 13. Service Debug Commands
+# 14. Service Debug Commands
 
 Check Flask:
 
@@ -315,9 +388,16 @@ sudo systemctl restart partybox.service
 sudo systemctl restart partybox-player.service
 ```
 
+nginx:
+
+```bash
+sudo systemctl status nginx
+sudo nginx -t && sudo systemctl reload nginx
+```
+
 ---
 
-# 14. Media Directory
+# 15. Media Directory
 
 Expected location:
 
@@ -333,15 +413,18 @@ curl -X POST http://127.0.0.1:5000/api/admin/media_scan?key=YOURKEY
 
 ---
 
-# 15. Appliance Checklist
+# 16. Appliance Checklist
 
 - [ ] Auto-login works
 - [ ] HDMI always active
 - [ ] USB audio default
 - [ ] Flask reachable
+- [ ] nginx active and serving `partybox.local`
+- [ ] Public URL contract works (`/`, `/user`, `/u`, `/tv`, `/admin`)
 - [ ] Player service running
 - [ ] MPV fullscreen playback works
 - [ ] Idle screen visible when paused
+- [ ] `./tools/health_check.sh` passes
 
 ---
 

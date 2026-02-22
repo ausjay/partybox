@@ -5,9 +5,13 @@ import os
 import re
 import json
 import time
+import socket
 import subprocess
+import shutil
+import urllib.error
+import urllib.request
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_from_directory, url_for
@@ -15,6 +19,7 @@ from flask import Flask, abort, jsonify, redirect, render_template, request, sen
 from . import db as DB
 
 YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,}$")
+HEALTH_CACHE: Dict[str, Any] = {"ts": 0.0, "status": 503, "payload": None}
 
 
 def _media_dir() -> str:
@@ -191,6 +196,238 @@ def _fetch_youtube_title(token: str) -> Optional[str]:
         return None
 
 
+def _parse_systemctl_show(text: str) -> Dict[str, str]:
+    out: Dict[str, str] = {}
+    for line in (text or "").splitlines():
+        if "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        out[k.strip()] = v.strip()
+    return out
+
+
+def _service_check(unit: str, expected_user: Optional[str] = None) -> Dict[str, Any]:
+    props = [
+        "LoadState",
+        "ActiveState",
+        "SubState",
+        "User",
+        "MainPID",
+        "Result",
+        "UnitFileState",
+    ]
+    cmd = ["systemctl", "show", unit, *[f"--property={p}" for p in props]]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=2.5, check=False)
+        if proc.returncode != 0:
+            err = (proc.stderr or proc.stdout or f"exit {proc.returncode}").strip()
+            return {"ok": False, "error": err}
+
+        data = _parse_systemctl_show(proc.stdout)
+        active = data.get("ActiveState") == "active"
+        pid_ok = (data.get("MainPID") or "0") != "0"
+        user = data.get("User") or ""
+
+        ok = active and pid_ok
+        if expected_user and user and user != expected_user:
+            ok = False
+
+        result: Dict[str, Any] = {
+            "ok": ok,
+            "active_state": data.get("ActiveState"),
+            "sub_state": data.get("SubState"),
+            "main_pid": int(data.get("MainPID") or 0),
+            "user": user,
+        }
+        if expected_user:
+            result["expected_user"] = expected_user
+        if data.get("Result"):
+            result["result"] = data.get("Result")
+        if data.get("UnitFileState"):
+            result["unit_file_state"] = data.get("UnitFileState")
+        return result
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _internet_check() -> Dict[str, Any]:
+    checks: Dict[str, Any] = {}
+    tcp_ok = False
+    https_ok = False
+
+    try:
+        with socket.create_connection(("1.1.1.1", 53), timeout=2.0):
+            pass
+        tcp_ok = True
+        checks["tcp_1_1_1_1_53"] = {"ok": True}
+    except Exception as e:
+        checks["tcp_1_1_1_1_53"] = {"ok": False, "error": str(e)}
+
+    try:
+        req = urllib.request.Request(
+            "https://www.google.com/generate_204",
+            headers={"User-Agent": "partybox-health/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=2.5) as resp:
+            code = int(getattr(resp, "status", 0) or 0)
+        https_ok = code in (200, 204)
+        checks["https_generate_204"] = {"ok": https_ok, "status": code}
+    except urllib.error.URLError as e:
+        checks["https_generate_204"] = {"ok": False, "error": str(e.reason)}
+    except Exception as e:
+        checks["https_generate_204"] = {"ok": False, "error": str(e)}
+
+    return {"ok": bool(tcp_ok or https_ok), "checks": checks}
+
+
+def _tv_heartbeat_check(max_age_seconds: int = 20) -> Dict[str, Any]:
+    raw = DB.get_setting("tv_heartbeat_json", "") or ""
+    if not raw:
+        return {"ok": False, "error": "missing heartbeat"}
+    try:
+        hb = json.loads(raw)
+        hb_ts = int(hb.get("ts") or 0)
+        age = max(0, int(time.time()) - hb_ts)
+        return {
+            "ok": age <= max_age_seconds,
+            "age_seconds": age,
+            "max_age_seconds": max_age_seconds,
+            "mode": hb.get("mode"),
+            "title": (hb.get("title") or "")[:120],
+        }
+    except Exception as e:
+        return {"ok": False, "error": f"invalid heartbeat json: {e}"}
+
+
+def _filesystem_check() -> Dict[str, Any]:
+    raw_paths = os.getenv("PARTYBOX_HEALTH_DISK_PATHS", "/,/home/user/projects/partybox/data/media")
+    max_used_pct = float(os.getenv("PARTYBOX_HEALTH_DISK_USED_MAX_PCT", "92"))
+    paths = [p.strip() for p in raw_paths.split(",") if p.strip()]
+    per_path: Dict[str, Any] = {}
+    all_ok = True
+
+    for p in paths:
+        try:
+            target = p if os.path.exists(p) else os.path.dirname(p) or "/"
+            total, used, free = shutil.disk_usage(target)
+            used_pct = (float(used) / float(total) * 100.0) if total else 0.0
+            ok = used_pct <= max_used_pct
+            if not ok:
+                all_ok = False
+            per_path[p] = {
+                "ok": ok,
+                "used_pct": round(used_pct, 1),
+                "max_used_pct": max_used_pct,
+                "free_gb": round(free / (1024 ** 3), 2),
+                "total_gb": round(total / (1024 ** 3), 2),
+            }
+        except Exception as e:
+            all_ok = False
+            per_path[p] = {"ok": False, "error": str(e)}
+
+    return {"ok": all_ok, "paths": per_path, "max_used_pct": max_used_pct}
+
+
+def _memory_check() -> Dict[str, Any]:
+    max_used_pct = float(os.getenv("PARTYBOX_HEALTH_MEM_USED_MAX_PCT", "92"))
+    try:
+        meminfo: Dict[str, int] = {}
+        with open("/proc/meminfo", "r", encoding="utf-8") as f:
+            for line in f:
+                if ":" not in line:
+                    continue
+                k, v = line.split(":", 1)
+                num = v.strip().split()[0]
+                if num.isdigit():
+                    meminfo[k.strip()] = int(num)
+
+        total_kb = int(meminfo.get("MemTotal", 0))
+        avail_kb = int(meminfo.get("MemAvailable", 0))
+        if total_kb <= 0:
+            return {"ok": False, "error": "MemTotal missing", "max_used_pct": max_used_pct}
+
+        used_kb = max(0, total_kb - avail_kb)
+        used_pct = (float(used_kb) / float(total_kb)) * 100.0
+        ok = used_pct <= max_used_pct
+        return {
+            "ok": ok,
+            "used_pct": round(used_pct, 1),
+            "max_used_pct": max_used_pct,
+            "available_gb": round(avail_kb / (1024 ** 2), 2),
+            "total_gb": round(total_kb / (1024 ** 2), 2),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e), "max_used_pct": max_used_pct}
+
+
+def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
+    checks: Dict[str, Any] = {}
+    ok = True
+
+    try:
+        with DB._connect() as conn:
+            conn.execute("SELECT 1").fetchone()
+        checks["db_connect"] = {"ok": True}
+    except Exception as e:
+        ok = False
+        checks["db_connect"] = {"ok": False, "error": str(e)}
+
+    try:
+        with DB._connect() as conn:
+            conn.execute("SELECT COUNT(*) FROM settings").fetchone()
+        checks["db_query"] = {"ok": True}
+    except Exception as e:
+        ok = False
+        checks["db_query"] = {"ok": False, "error": str(e)}
+
+    required_services = [
+        s.strip()
+        for s in os.getenv(
+            "PARTYBOX_HEALTH_REQUIRED_SERVICES",
+            "partybox.service,partybox-player.service,lightdm.service",
+        ).split(",")
+        if s.strip()
+    ]
+    service_checks: Dict[str, Any] = {}
+    services_ok = True
+    for unit in required_services:
+        expected_user = "partybox" if unit.startswith("partybox") else None
+        c = _service_check(unit, expected_user=expected_user)
+        service_checks[unit] = c
+        if not bool(c.get("ok")):
+            services_ok = False
+    checks["services"] = {"ok": services_ok, "units": service_checks}
+    ok = ok and services_ok
+
+    hb_max_age = int(os.getenv("PARTYBOX_HEALTH_TV_HEARTBEAT_MAX_AGE_SECONDS", "20"))
+    hb = _tv_heartbeat_check(max_age_seconds=hb_max_age)
+    checks["tv_heartbeat"] = hb
+    ok = ok and bool(hb.get("ok"))
+
+    internet = _internet_check()
+    checks["internet"] = internet
+    ok = ok and bool(internet.get("ok"))
+
+    filesystem = _filesystem_check()
+    checks["filesystem"] = filesystem
+    ok = ok and bool(filesystem.get("ok"))
+
+    memory = _memory_check()
+    checks["memory"] = memory
+    ok = ok and bool(memory.get("ok"))
+
+    failed = [name for name, result in checks.items() if not bool((result or {}).get("ok", False))]
+    summary = {"failed": len(failed), "failed_checks": failed}
+
+    payload = {
+        "ok": ok,
+        "checks": checks,
+        "summary": summary,
+        "ts": int(time.time()),
+    }
+    return (200 if ok else 503), payload
+
+
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="../static", template_folder="../templates")
 
@@ -240,6 +477,10 @@ def create_app() -> Flask:
         locked = (DB.get_setting("requests_locked", "0") or "0").strip().lower() in ("1", "true", "yes", "on")
         av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
         return render_template("user.html", items=items, locked=locked, queue=queue, av_mode=av_mode)
+
+    @app.get("/user")
+    def user_public():
+        return redirect(url_for("user"))
 
     @app.get("/admin")
     def admin():
@@ -432,28 +673,17 @@ def create_app() -> Flask:
     @app.get("/api/admin/health")
     def api_admin_health():
         _admin_or_403()
+        now = time.time()
+        ttl = float(os.getenv("PARTYBOX_HEALTH_CACHE_TTL_SECONDS", "4.0"))
+        cached = HEALTH_CACHE.get("payload")
+        if cached is not None and (now - float(HEALTH_CACHE.get("ts") or 0.0)) < ttl:
+            return jsonify(cached), int(HEALTH_CACHE.get("status") or 503)
 
-        checks: Dict[str, Any] = {}
-        ok = True
-
-        try:
-            with DB._connect() as conn:
-                conn.execute("SELECT 1").fetchone()
-            checks["db_connect"] = {"ok": True}
-        except Exception as e:
-            ok = False
-            checks["db_connect"] = {"ok": False, "error": str(e)}
-
-        try:
-            with DB._connect() as conn:
-                conn.execute("SELECT COUNT(*) FROM settings").fetchone()
-            checks["db_query"] = {"ok": True}
-        except Exception as e:
-            ok = False
-            checks["db_query"] = {"ok": False, "error": str(e)}
-
-        status = 200 if ok else 503
-        return jsonify({"ok": ok, "checks": checks, "ts": int(time.time())}), status
+        status, payload = _build_admin_health()
+        HEALTH_CACHE["ts"] = now
+        HEALTH_CACHE["status"] = status
+        HEALTH_CACHE["payload"] = payload
+        return jsonify(payload), status
 
     @app.post("/api/admin/media_scan")
     def api_admin_media_scan():
