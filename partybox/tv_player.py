@@ -14,6 +14,10 @@
 #
 # HEARTBEAT:
 # - Posts /api/tv/heartbeat every few seconds so Admin can show if TV agent is alive.
+#
+# IMPORTANT:
+# - Force mpv to use SDL video output to avoid DRM/KMS permission issues in kiosk setups.
+# - Prefer ALSA audio to avoid PulseAudio "stream is suspended" behavior.
 # =============================================================================
 
 from __future__ import annotations
@@ -29,14 +33,23 @@ from typing import Any, Dict, Optional, Tuple
 
 API_BASE = os.getenv("PARTYBOX_API", "http://127.0.0.1:5000").rstrip("/")
 POLL_SECONDS = float(os.getenv("PARTYBOX_POLL_SECONDS", "1.0"))
+HB_EVERY = float(os.getenv("PARTYBOX_HEARTBEAT_SECONDS", "3.0"))
 
-MPV_BIN = os.getenv("MPV_BIN", "mpv")
+# Prefer PARTYBOX_MPV_BIN, but also accept MPV_BIN for backward compatibility
+MPV_BIN = (os.getenv("PARTYBOX_MPV_BIN") or os.getenv("MPV_BIN") or "mpv").strip()
 
 DEFAULT_MEDIA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "media"))
 MEDIA_DIR = os.path.abspath(os.getenv("PARTYBOX_MEDIA_DIR", DEFAULT_MEDIA_DIR))
 
+# Optional ALSA device name (example: "plughw:PCH,0" or "default")
+# If blank, mpv will use ALSA default.
+ALSA_DEVICE = (os.getenv("PARTYBOX_ALSA_DEVICE") or "").strip()
+
 EXTRA_MPV_ARGS = shlex.split(os.getenv("PARTYBOX_MPV_ARGS", "").strip()) if os.getenv("PARTYBOX_MPV_ARGS") else []
 
+# Force kiosk-safe output:
+# - --vo=sdl prevents DRM/KMS "permission denied" failures
+# - --ao=alsa avoids PulseAudio "stream is suspended"
 BASE_MPV_ARGS = [
     "--fs",
     "--no-border",
@@ -46,8 +59,17 @@ BASE_MPV_ARGS = [
     "--keep-open=no",
     "--really-quiet",
     "--hwdec=auto-safe",
+    "--vo=sdl",
+    "--ao=alsa",
+]
+
+YTDL_ARGS_ON = [
     "--ytdl=yes",
     "--ytdl-format=bestvideo+bestaudio/best",
+]
+
+YTDL_ARGS_OFF = [
+    "--ytdl=no",
 ]
 
 
@@ -75,12 +97,11 @@ def post_heartbeat(mode: str, title: str = "", youtube_id: str = "") -> None:
             method="POST",
             payload={
                 "mode": mode,
-                "title": title[:120],
-                "youtube_id": youtube_id[:200],
+                "title": (title or "")[:120],
+                "youtube_id": (youtube_id or "")[:200],
             },
         )
     except Exception:
-        # heartbeat should never kill playback loop
         pass
 
 
@@ -153,9 +174,30 @@ def pick_item_from_state(state: Dict[str, Any]) -> Tuple[Optional[str], Optional
     return (str(youtube_id), queue_id, str(title), mode)
 
 
-def start_mpv(target: str) -> subprocess.Popen:
-    cmd = [MPV_BIN, *BASE_MPV_ARGS, *EXTRA_MPV_ARGS, target]
-    return subprocess.Popen(cmd)
+def build_mpv_cmd(target: str, use_ytdl: bool) -> list[str]:
+    ytdl_args = YTDL_ARGS_ON if use_ytdl else YTDL_ARGS_OFF
+    args = [MPV_BIN, *BASE_MPV_ARGS, *ytdl_args, *EXTRA_MPV_ARGS]
+
+    # If user wants a specific ALSA device, set it explicitly
+    if ALSA_DEVICE:
+        args += [f"--audio-device=alsa/{ALSA_DEVICE}"]
+
+    args += [target]
+    return args
+
+
+def start_mpv(target: str, use_ytdl: bool) -> subprocess.Popen:
+    cmd = build_mpv_cmd(target, use_ytdl=use_ytdl)
+    log(f"[tv_player] mpv cmd: {' '.join(shlex.quote(x) for x in cmd)}")
+
+    # Capture mpv stderr/stdout to a file so we can see why it exits (if it exits fast)
+    log_path = os.getenv("PARTYBOX_MPV_LOG", "/tmp/partybox-mpv.log")
+    try:
+        f = open(log_path, "ab", buffering=0)  # noqa: SIM115
+    except Exception:
+        f = None
+
+    return subprocess.Popen(cmd, stdout=f or subprocess.DEVNULL, stderr=f or subprocess.DEVNULL)
 
 
 def stop_mpv(proc: subprocess.Popen) -> None:
@@ -163,7 +205,7 @@ def stop_mpv(proc: subprocess.Popen) -> None:
         proc.terminate()
     except Exception:
         return
-    for _ in range(10):
+    for _ in range(20):
         if proc.poll() is not None:
             return
         time.sleep(0.1)
@@ -174,42 +216,117 @@ def stop_mpv(proc: subprocess.Popen) -> None:
 
 
 def main() -> None:
-    last_key: Optional[Tuple[str, Optional[int]]] = None
+    log(f"[tv_player] starting. API_BASE={API_BASE} MEDIA_DIR={MEDIA_DIR} MPV_BIN={MPV_BIN}")
+
+    proc: Optional[subprocess.Popen] = None
+    cur_youtube_id: Optional[str] = None
+    cur_queue_id: Optional[int] = None
+    cur_title: str = ""
+    cur_mode: str = "unknown"
+    cur_is_queue_item: bool = False
+    complete_current_on_exit: bool = True
+
     last_mode: Optional[str] = None
+    pending_key: Optional[Tuple[str, Optional[int]]] = None
+    pending_seen: int = 0  # require >=2 before starting
 
     hb_last = 0.0
-    HB_EVERY = float(os.getenv("PARTYBOX_HEARTBEAT_SECONDS", "3.0"))
-
-    log(f"[tv_player] starting. API_BASE={API_BASE} MEDIA_DIR={MEDIA_DIR}")
 
     while True:
         try:
+            # If mpv is running, do NOT chase API "now" changes.
+            if proc is not None and proc.poll() is None:
+                now_ts = time.time()
+                if now_ts - hb_last >= HB_EVERY:
+                    hb_last = now_ts
+                    post_heartbeat(mode="playing", title=cur_title, youtube_id=cur_youtube_id or "")
+
+                # Stop mpv if paused/spotify flips on, or if "now" moved to another
+                # queue item (skip/remove/clear/promote effects).
+                try:
+                    s2 = get_state()
+                    paused_or_spotify = bool(s2.get("paused", False)) or (str(s2.get("av_mode") or "").lower() == "spotify")
+
+                    state_now = s2.get("now") or None
+                    state_qid: Optional[int] = None
+                    if state_now is not None and state_now.get("queue_id") is not None:
+                        try:
+                            state_qid = int(state_now.get("queue_id"))
+                        except Exception:
+                            state_qid = None
+
+                    queue_item_replaced = bool(
+                        cur_is_queue_item
+                        and cur_queue_id is not None
+                        and state_qid != cur_queue_id
+                    )
+
+                    if paused_or_spotify or queue_item_replaced:
+                        complete_current_on_exit = False
+                        if paused_or_spotify:
+                            log("[tv_player] stopping mpv due to paused/spotify flip")
+                        else:
+                            log("[tv_player] stopping mpv because current queue item changed")
+                        stop_mpv(proc)
+                except Exception:
+                    pass
+
+                time.sleep(0.5)
+                continue
+
+            # If we had a proc and it ended, finalize it
+            if proc is not None:
+                rc = proc.poll()
+                if rc is None:
+                    stop_mpv(proc)
+                    rc = proc.poll()
+                log(f"[tv_player] mpv exit rc={int(rc) if rc is not None else -1}")
+
+                if complete_current_on_exit and cur_is_queue_item and cur_queue_id is not None:
+                    try:
+                        mark_done(cur_queue_id)
+                    except Exception as e:
+                        log(f"[tv_player] warn: mark_done failed: {e}")
+
+                proc = None
+                cur_youtube_id = None
+                cur_queue_id = None
+                cur_title = ""
+                cur_mode = "unknown"
+                cur_is_queue_item = False
+                complete_current_on_exit = True
+                time.sleep(0.2)
+
             state = get_state()
             youtube_id, queue_id, title, mode = pick_item_from_state(state)
 
-            # Heartbeat (always)
             now_ts = time.time()
             if now_ts - hb_last >= HB_EVERY:
                 hb_last = now_ts
                 post_heartbeat(mode=mode, title=title or "", youtube_id=youtube_id or "")
 
-            # Log mode transitions (so service isn't "silent")
             if mode != last_mode:
                 last_mode = mode
                 log(f"[tv_player] state: mode={mode} av_mode={state.get('av_mode')} paused={state.get('paused')}")
 
             if not youtube_id:
-                last_key = None
+                pending_key = None
+                pending_seen = 0
                 time.sleep(POLL_SECONDS)
                 continue
 
             key = (youtube_id, queue_id)
-            if key == last_key:
+            if key != pending_key:
+                pending_key = key
+                pending_seen = 1
                 time.sleep(POLL_SECONDS)
                 continue
-            last_key = key
+            pending_seen += 1
 
-            # Determine mpv target
+            if pending_seen < 2:
+                time.sleep(POLL_SECONDS)
+                continue
+
             if is_local_token(youtube_id):
                 local_path = local_path_from_token(youtube_id)
                 if not local_path:
@@ -217,55 +334,34 @@ def main() -> None:
                     time.sleep(0.5)
                     continue
                 target = local_path
+                use_ytdl = False
             else:
                 target = youtube_or_url(youtube_id)
                 if not target:
                     time.sleep(0.5)
                     continue
+                use_ytdl = True
 
             is_queue_item = (queue_id is not None and queue_id > 0 and mode in ("queue", "playing"))
 
-            if is_queue_item:
+            if is_queue_item and queue_id is not None:
                 try:
                     mark_playing(queue_id)
                 except Exception as e:
                     log(f"[tv_player] warn: mark_playing failed: {e}")
 
-            log(f"[tv_player] playing: {title or youtube_id} ({mode})")
-            proc = start_mpv(target)
+            cur_youtube_id = youtube_id
+            cur_queue_id = queue_id
+            cur_title = title or youtube_id
+            cur_mode = mode
+            cur_is_queue_item = is_queue_item
+            complete_current_on_exit = True
 
-            while proc.poll() is None:
-                time.sleep(0.5)
+            log(f"[tv_player] playing: {cur_title} ({mode})")
+            proc = start_mpv(target, use_ytdl=use_ytdl)
 
-                # Keep heartbeat alive during playback too
-                now_ts = time.time()
-                if now_ts - hb_last >= HB_EVERY:
-                    hb_last = now_ts
-                    post_heartbeat(mode="playing", title=title or "", youtube_id=youtube_id or "")
-
-                try:
-                    s2 = get_state()
-                    if bool(s2.get("paused", False)) or (str(s2.get("av_mode") or "").lower() == "spotify"):
-                        log("[tv_player] stopping mpv due to paused/spotify flip")
-                        stop_mpv(proc)
-                        break
-                except Exception:
-                    pass
-
-            rc = proc.poll()
-            if rc is None:
-                stop_mpv(proc)
-                rc = proc.poll()
-
-            log(f"[tv_player] mpv exit rc={int(rc) if rc is not None else -1}")
-
-            if is_queue_item:
-                try:
-                    mark_done(queue_id)  # type: ignore[arg-type]
-                except Exception as e:
-                    log(f"[tv_player] warn: mark_done failed: {e}")
-
-            time.sleep(0.2)
+            pending_key = None
+            pending_seen = 0
 
         except Exception as e:
             log(f"[tv_player] error: {e}")

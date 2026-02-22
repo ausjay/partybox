@@ -24,33 +24,18 @@
         </div>
 
         <div class="topActions">
-          <div class="pill" title="TV heartbeat">
-            <span id="tv_dot" class="dot warn"></span>
-            <span id="tv_label">TV offline</span>
-          </div>
           <div class="pill" title="Playback mode">
             <span class="dot" id="mode_dot"></span>
-            <span>Mode</span>
-            <span id="mode_text" class="muted">—</span>
+            <span id="mode_text">Mode: —</span>
           </div>
-          <div class="pill" title="A/V mode">
-            <span class="dot" id="av_dot"></span>
-            <span id="av_text">—</span>
+          <div id="lock_pill" class="pill" title="Requests lock" style="display:none;">
+            <span id="lock_dot" class="dot bad"></span>
+            <span id="lock_text">Requests Locked</span>
           </div>
         </div>
       </div>
 
       <!-- Banners -->
-      <div id="paused_banner" class="pb-banner warn" style="display:none; margin: 12px 0;">
-        <div class="title">TV is paused</div>
-        <div class="sub">You can still add to the queue — it will start when Admin resumes playback.</div>
-      </div>
-
-      <div id="locked_banner" class="pb-banner warn" style="display:none; margin: 12px 0;">
-        <div class="title">Requests are locked</div>
-        <div class="sub">Ask the host to unlock requests to add to the queue.</div>
-      </div>
-
       <div id="spotify_banner" class="pb-banner warn" style="display:none; margin: 12px 0;">
         <div class="title">Spotify Mode</div>
         <div class="sub">Video requests are disabled while Spotify is active.</div>
@@ -257,33 +242,32 @@
 
     function updateBanners() {
       if (!STATE) return;
-      el("paused_banner").style.display = STATE.paused ? "block" : "none";
-      el("locked_banner").style.display = STATE.locked ? "block" : "none";
       el("spotify_banner").style.display = ((STATE.av_mode || "").toLowerCase() === "spotify") ? "block" : "none";
     }
 
-    function updateTopPills(tvOnline) {
-      // TV pill
-      const dot = el("tv_dot");
-      dot.classList.remove("ok", "warn", "bad");
-      dot.classList.add(tvOnline ? "ok" : "bad");
-      el("tv_label").textContent = tvOnline ? "TV online" : "TV offline";
+    function updateTopPills() {
+      const av = (STATE?.av_mode || AV_MODE || "partybox").toLowerCase();
+      const paused = !!(STATE && STATE.paused);
 
-      // Mode pill
-      const mode = (STATE?.mode || "—").toLowerCase();
-      el("mode_text").textContent = mode;
       const md = el("mode_dot");
       md.classList.remove("ok", "warn", "bad");
-      if (mode === "playing" || mode === "queue" || mode === "idle") md.classList.add("ok");
-      else if (mode === "paused") md.classList.add("warn");
-      else md.classList.add("bad");
+      if (av === "spotify") {
+        md.classList.add("ok");
+        el("mode_text").textContent = "Mode: Spotify";
+      } else if (paused) {
+        md.classList.add("warn");
+        el("mode_text").textContent = "Mode: PartyBox • Paused";
+      } else {
+        md.classList.add("ok");
+        el("mode_text").textContent = "Mode: PartyBox";
+      }
 
-      // AV pill
-      const av = (STATE?.av_mode || AV_MODE || "partybox").toLowerCase();
-      el("av_text").textContent = (av === "spotify") ? "Spotify" : "PartyBox";
-      const ad = el("av_dot");
-      ad.classList.remove("ok", "warn", "bad");
-      ad.classList.add(av === "spotify" ? "warn" : "ok");
+      const locked = !!(STATE && STATE.locked);
+      const lockPill = el("lock_pill");
+      lockPill.style.display = locked ? "" : "none";
+      el("lock_dot").classList.remove("ok", "warn", "bad");
+      el("lock_dot").classList.add("bad");
+      el("lock_text").textContent = "Requests Locked";
     }
 
     function updateNowPanel() {
@@ -427,6 +411,7 @@
         STATE = j;
 
         updateBanners();
+        updateTopPills();
 
         // Re-render results to apply disabled state when locked/spotify changes
         renderResults(filterCatalog());
@@ -445,27 +430,11 @@
       } catch (e) {}
     }
 
-    async function pollTvStatus() {
-      // best-effort online indicator using /api/tv/status
-      try {
-        const r = await fetch("/api/tv/status", { cache: "no-store" });
-        const j = await r.json();
-        if (!j.ok) throw new Error("bad");
-        const st = j.status;
-        const now = Math.floor(Date.now() / 1000);
-        const online = !!(st && st.ts && (now - st.ts) <= 15);
-        updateTopPills(online);
-      } catch (e) {
-        // fall back: if state fetch works, assume server ok but tv maybe unknown
-        updateTopPills(false);
-      }
-    }
-
     function wireUI() {
       el("btn_search").addEventListener("click", () => renderResults(filterCatalog()));
       el("btn_clear").addEventListener("click", () => { el("q").value = ""; renderResults(filterCatalog()); });
       el("q").addEventListener("input", () => renderResults(filterCatalog()));
-      el("btn_refresh").addEventListener("click", () => { pollState(); pollQueue(); pollTvStatus(); });
+      el("btn_refresh").addEventListener("click", () => { pollState(); pollQueue(); });
       el("btn_upnext_toggle").addEventListener("click", () => {
         UP_NEXT_EXPANDED = !UP_NEXT_EXPANDED;
         el("btn_upnext_toggle").textContent = UP_NEXT_EXPANDED ? "Show less" : "Show all";
@@ -478,11 +447,9 @@
     renderResults(filterCatalog());
     pollState();
     pollQueue();
-    pollTvStatus();
 
     setInterval(pollState, 1000);
     setInterval(pollQueue, 2000);
-    setInterval(pollTvStatus, 5000);
   </script>
 </body>
 </html>

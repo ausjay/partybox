@@ -429,6 +429,32 @@ def create_app() -> Flask:
         return jsonify({"ok": True, "queue_id": qid})
 
     # ---- Admin-only endpoints ----
+    @app.get("/api/admin/health")
+    def api_admin_health():
+        _admin_or_403()
+
+        checks: Dict[str, Any] = {}
+        ok = True
+
+        try:
+            with DB._connect() as conn:
+                conn.execute("SELECT 1").fetchone()
+            checks["db_connect"] = {"ok": True}
+        except Exception as e:
+            ok = False
+            checks["db_connect"] = {"ok": False, "error": str(e)}
+
+        try:
+            with DB._connect() as conn:
+                conn.execute("SELECT COUNT(*) FROM settings").fetchone()
+            checks["db_query"] = {"ok": True}
+        except Exception as e:
+            ok = False
+            checks["db_query"] = {"ok": False, "error": str(e)}
+
+        status = 200 if ok else 503
+        return jsonify({"ok": ok, "checks": checks, "ts": int(time.time())}), status
+
     @app.post("/api/admin/media_scan")
     def api_admin_media_scan():
         _admin_or_403()

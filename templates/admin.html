@@ -18,19 +18,19 @@
       </div>
 
       <div class="topActions">
-        <div class="pill">
-          <span class="dot ok"></span>
-          <span>System Online</span>
+        <div class="pill" title="System health">
+          <span id="top_health_dot" class="dot warn"></span>
+          <span id="top_health_text">System Health</span>
         </div>
 
-        <div class="pill" title="A/V Mode (partybox vs spotify)">
-          <span id="top_av_dot" class="dot {% if av_mode == 'spotify' %}warn{% else %}ok{% endif %}"></span>
-          <span>Mode: <b id="top_av_text" style="font-weight:800;">{{ 'Spotify' if av_mode == 'spotify' else 'PartyBox' }}</b></span>
+        <div class="pill" title="Mode">
+          <span id="top_mode_dot" class="dot {% if av_mode != 'spotify' and paused %}warn{% else %}ok{% endif %}"></span>
+          <span id="top_mode_text">{% if av_mode == 'spotify' %}Mode: Spotify{% elif paused %}Mode: PartyBox • Paused{% else %}Mode: PartyBox{% endif %}</span>
         </div>
 
-        <div class="pill" title="Requests lock">
-          <span id="top_lock_dot" class="dot {% if locked %}bad{% else %}ok{% endif %}"></span>
-          <span id="top_lock_text">{% if locked %}<b style="font-weight:800;">Requests Locked</b>{% else %}Requests Open{% endif %}</span>
+        <div id="top_lock_pill" class="pill" title="Requests lock" style="{% if not locked %}display:none;{% endif %}">
+          <span id="top_lock_dot" class="dot bad"></span>
+          <span id="top_lock_text"><b style="font-weight:800;">Requests Locked</b></span>
         </div>
       </div>
     </div>
@@ -289,22 +289,33 @@
 
   // ---------- Live UI helpers ----------
   function setTopLock(locked) {
+    const pill = document.getElementById("top_lock_pill");
     const dot = document.getElementById("top_lock_dot");
     const txt = document.getElementById("top_lock_text");
+    pill.style.display = locked ? "" : "none";
     dot.classList.remove("ok","bad","warn");
-    dot.classList.add(locked ? "bad" : "ok");
-    txt.innerHTML = locked ? "<b style=\"font-weight:800;\">Requests Locked</b>" : "Requests Open";
+    dot.classList.add("bad");
+    txt.innerHTML = "<b style=\"font-weight:800;\">Requests Locked</b>";
     const btn = document.getElementById("btn_lock");
     btn.className = "btn " + (locked ? "primary" : "ghost");
     btn.textContent = locked ? "Unlock Requests" : "Lock Requests";
   }
 
-  function setTopAv(avMode) {
-    const dot = document.getElementById("top_av_dot");
-    const txt = document.getElementById("top_av_text");
+  function setTopMode(avMode, paused) {
+    const dot = document.getElementById("top_mode_dot");
+    const txt = document.getElementById("top_mode_text");
     dot.classList.remove("ok","warn","bad");
-    dot.classList.add(avMode === "spotify" ? "warn" : "ok");
-    txt.textContent = (avMode === "spotify") ? "Spotify" : "PartyBox";
+
+    if (avMode === "spotify") {
+      dot.classList.add("ok");
+      txt.textContent = "Mode: Spotify";
+    } else if (paused) {
+      dot.classList.add("warn");
+      txt.textContent = "Mode: PartyBox • Paused";
+    } else {
+      dot.classList.add("ok");
+      txt.textContent = "Mode: PartyBox";
+    }
 
     // highlight the mode buttons
     const pb = document.getElementById("btn_av_partybox");
@@ -313,10 +324,19 @@
     sp.className = "btn " + (avMode === "spotify" ? "primary" : "ghost");
   }
 
+  function setTopHealth(ok) {
+    const dot = document.getElementById("top_health_dot");
+    const txt = document.getElementById("top_health_text");
+    dot.classList.remove("ok","warn","bad");
+    dot.classList.add(ok ? "ok" : "bad");
+    txt.textContent = ok ? "System Health" : "System Health Degraded";
+  }
+
   function setPaused(paused, muted) {
     const btn = document.getElementById("btn_pause_resume");
     btn.className = "btn " + (paused ? "primary" : "pink");
     btn.textContent = paused ? "Resume" : "Pause";
+    setTopMode(STATE.av_mode, paused);
 
     // Update header badges
     const hint = document.getElementById("now_header_hint");
@@ -616,7 +636,7 @@
     setStatus("");
     // optimistic
     STATE.av_mode = mode;
-    setTopAv(mode);
+    setTopMode(mode, STATE.paused);
 
     post('/api/admin/av_mode', {mode})
       .then(() => { setStatus(`Mode set: ${mode}`); pollState(); })
@@ -651,7 +671,7 @@
       };
 
       setTopLock(STATE.locked);
-      setTopAv(STATE.av_mode);
+      setTopMode(STATE.av_mode, STATE.paused);
       setMuted(STATE.muted);
       setPaused(STATE.paused, STATE.muted);
       updateNowCardFromState({
@@ -667,12 +687,24 @@
     }
   }
 
+  async function pollHealth() {
+    try {
+      const r = await fetch(`/api/admin/health?key=${encodeURIComponent(KEY)}`, { cache: "no-store" });
+      const j = await r.json();
+      setTopHealth(!!j.ok);
+    } catch (e) {
+      setTopHealth(false);
+    }
+  }
+
   // init
   pollState();
   pollQueue();
+  pollHealth();
 
   // keep it live
   setInterval(pollState, 1000);
   setInterval(pollQueue, 1200);
+  setInterval(pollHealth, 5000);
 </script>
 {% endblock %}
