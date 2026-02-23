@@ -27,6 +27,12 @@ This document captures the deployed contract for exposing PartyBox on LAN at `ht
 
 Use `http://partybox.local/user` in QR codes/signage.
 
+## TV Paused UI
+
+- TV paused state now uses a bottom "glass" status bar instead of a centered modal.
+- While paused, `/tv` applies a dim + subtle blur overlay to the background so status is clear but the center logo remains unobstructed.
+- The top-left TV header and idle QR prompt behavior are unchanged.
+
 ## nginx Configuration
 
 Edited file:
@@ -120,4 +126,3 @@ The script checks:
    - `http://127.0.0.1:5000/tv` (`200`)
 
 The script exits non-zero if any check fails.
-

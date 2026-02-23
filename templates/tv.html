@@ -11,6 +11,10 @@
 
 <body class="tvPage">
   <div class="tv">
+    <video class="tvBgVideo" autoplay muted loop playsinline preload="auto" aria-hidden="true">
+      <source src="/static/partybox_animated_background.mp4" type="video/mp4" />
+    </video>
+    <img class="tvCenterLogo" src="/static/partybox_t.png" alt="PartyBox" />
     <div class="playerWrap">
       <div id="player"></div>
     </div>
@@ -18,7 +22,7 @@
 
   <!-- Top-left status pills -->
   <div style="position: fixed; left: 16px; top: 16px; display:flex; gap:10px; align-items:center; z-index: 50;">
-    <div class="tvBrandIcon" aria-hidden="true"></div>
+    <img class="tvWordmark" src="/static/partybox_t.png" alt="PartyBox" />
     <div class="pill">
       <span id="tv_dot" class="dot warn"></span>
       <span id="mode_label">PartyBox</span>
@@ -29,29 +33,50 @@
     </div>
   </div>
 
-  <!-- Center overlay panel -->
-  <div id="overlay_wrap" style="position: fixed; inset: 0; display:none; align-items:center; justify-content:center; z-index: 40; pointer-events:none;">
-    <div class="panel" style="width: min(860px, calc(100vw - 56px));">
-      <div class="panelHeader">
-        <div>
-          <div class="kicker" id="ov_kicker">PAUSED</div>
-          <div class="hint" id="ov_hint">—</div>
-        </div>
-        <span id="ov_badge" class="badge paused">Paused</span>
-      </div>
-      <div class="panelInner">
-        <div class="card">
-          <div class="title" id="ov_title">No selection</div>
-          <div class="sub" id="ov_sub">Admin paused playback</div>
-        </div>
-      </div>
-    </div>
+  <!-- QR prompt surfaces -->
+  <div id="tv_qr_idle" class="tvQr tvQrIdle hidden" aria-hidden="true">
+    <div class="tvQrTitle">Scan To Pick The Next Video</div>
+    <div id="tv_qr_idle_code" class="tvQrCode"></div>
+    <div class="tvQrSub" id="tv_qr_idle_sub">Join the same Wi-Fi, then open /user on your phone</div>
   </div>
 
+  <div id="paused_overlay" class="paused-overlay" aria-hidden="true"></div>
+  <div id="paused_bar" class="paused-bar" aria-hidden="true">
+    <div class="paused-bar-left">
+      <div class="paused-kicker">PAUSED</div>
+      <div class="paused-reason" id="paused_reason">Admin paused playback</div>
+    </div>
+    <span class="badge paused">Paused</span>
+  </div>
+
+  <script src="/static/qrcode.min.js"></script>
   <script>
     let STATE = null;
+    let QR_READY = false;
 
     const el = (id) => document.getElementById(id);
+
+    function getJoinUrl() {
+      return `${window.location.origin}/user`;
+    }
+
+    function ensureQr() {
+      if (QR_READY) return;
+      if (typeof window.QRCode !== "function") return;
+
+      const joinUrl = getJoinUrl();
+      const shortJoin = `${window.location.host}/user`;
+      el("tv_qr_idle_sub").textContent = `Join the same Wi-Fi, then open ${shortJoin}`;
+
+      new window.QRCode(el("tv_qr_idle_code"), {
+        text: joinUrl,
+        width: 220,
+        height: 220,
+        correctLevel: window.QRCode.CorrectLevel.M
+      });
+
+      QR_READY = true;
+    }
 
     function setModePill(mode, tvOnline, avMode, locked) {
       const dot = el("tv_dot");
@@ -73,63 +98,45 @@
       el("mode_label").textContent = label;
     }
 
-    function showOverlay(show, kicker, hint, title, sub, badgeText) {
-      const wrap = el("overlay_wrap");
-      if (!show) { wrap.style.display = "none"; return; }
-      wrap.style.display = "flex";
+    function setPausedUi(show, reasonText) {
+      const overlay = el("paused_overlay");
+      const bar = el("paused_bar");
+      const reason = el("paused_reason");
+      if (reasonText) reason.textContent = reasonText;
 
-      el("ov_kicker").textContent = kicker || "";
-      el("ov_hint").textContent = hint || "";
-      el("ov_title").textContent = title || "";
-      el("ov_sub").textContent = sub || "";
-
-      const b = el("ov_badge");
-      b.textContent = badgeText || "";
-      b.className = "badge";
-      if ((kicker || "").toLowerCase().includes("paused")) b.classList.add("paused");
-      if ((kicker || "").toLowerCase().includes("spotify")) b.classList.add("paused");
-      if ((kicker || "").toLowerCase().includes("locked")) b.classList.add("locked");
+      overlay.classList.toggle("show", !!show);
+      bar.classList.toggle("show", !!show);
+      document.body.classList.toggle("is-paused", !!show);
     }
 
     function updateFromState(tvOnline) {
       if (!STATE) return;
+      ensureQr();
 
       const av = (STATE.av_mode || "partybox").toLowerCase();
       const locked = !!STATE.locked;
       const paused = !!STATE.paused;
       const mode = (STATE.mode || "").toLowerCase();
+      const now = STATE.now || null;
+      const qrEnabled = !!(STATE.tv_qr_enabled ?? true);
 
-      const nowTitle = (STATE.now && STATE.now.title) ? STATE.now.title : "—";
+      const nowTitle = (now && now.title) ? now.title : "—";
       el("now_label").textContent = nowTitle;
 
       setModePill(mode, tvOnline, av, locked);
 
-      // Overlay rules:
-      // - Spotify: show Spotify overlay
-      // - Locked: show locked overlay
-      // - Paused + no selection: centered paused/no selection/admin paused
-      // - Paused + has selection: show paused + title
-      // - Otherwise: no overlay
-      if (av === "spotify") {
-        showOverlay(true, "SPOTIFY", "Audio mode", "Spotify active", "Video playback is disabled while Spotify is active.", "Spotify");
-        return;
-      }
+      const partyboxMode = av !== "spotify";
+      const idlePartybox = qrEnabled && partyboxMode && !paused && mode === "empty";
 
-      if (locked) {
-        showOverlay(true, "LOCKED", "Requests", "Requests locked", "Only Admin can add to the queue right now.", "Locked");
-        return;
-      }
+      el("tv_qr_idle").classList.toggle("hidden", !idlePartybox);
 
       if (paused) {
-        if (!STATE.now) {
-          showOverlay(true, "PAUSED", "No selection", "No selection", "Admin paused playback", "Paused");
-        } else {
-          showOverlay(true, "PAUSED", "Holding selection", STATE.now.title || "Selection", "Admin paused playback", "Paused");
-        }
+        const reason = STATE.now ? "Holding current selection" : "Admin paused playback";
+        setPausedUi(true, reason);
         return;
       }
 
-      showOverlay(false);
+      setPausedUi(false);
     }
 
     async function pollState() {
