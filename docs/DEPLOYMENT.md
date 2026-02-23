@@ -2,6 +2,8 @@
 
 This document captures the deployed contract for exposing PartyBox on LAN at `http://partybox.local` using nginx.
 
+For HTTPS + Spotify OAuth callback specifics, see `docs/partybox_networking.md`.
+
 ## Current Host Model
 
 - Hostname/mDNS: `partybox.local` (Avahi-enabled LAN discovery)
@@ -62,20 +64,31 @@ Copy resulting:
 
 - `SPOTIFY_REFRESH_TOKEN`
 
-### 3) Configure partybox.service env vars
+### 3) Configure Spotify env vars
 
-Set these in `/etc/systemd/system/partybox.service` (or a referenced EnvironmentFile):
+Recommended: keep Spotify env vars in `/etc/partybox.env`, then reference it from `partybox.service`:
 
 ```ini
-Environment=SPOTIFY_CLIENT_ID=...
-Environment=SPOTIFY_CLIENT_SECRET=...
-Environment=SPOTIFY_REFRESH_TOKEN=...
-Environment=SPOTIFY_DEVICE_NAME=UJ-PartyBox
-Environment=SPOTIFY_POLL_SECONDS=2
+EnvironmentFile=/etc/partybox.env
 ```
 
-`SPOTIFY_DEVICE_NAME` must match librespot Connect name (for example librespot `--name UJ-PartyBox`).
-If Spotify is playing on another device, PartyBox reports Spotify as inactive for TV metadata display.
+Example `/etc/partybox.env`:
+
+```bash
+SPOTIFY_CLIENT_ID=...
+SPOTIFY_CLIENT_SECRET=...
+SPOTIFY_REFRESH_TOKEN=...
+SPOTIFY_DEVICE_NAME=PartyBox
+SPOTIFY_DEVICE_ID=
+SPOTIFY_POLL_SECONDS=2
+```
+
+Device matching priority:
+
+1. `SPOTIFY_DEVICE_ID` (preferred when set)
+2. `SPOTIFY_DEVICE_NAME` (normalized name compare)
+
+`SPOTIFY_DEVICE_NAME` should match librespot Connect name (for example librespot `--name \"PartyBox\"`).
 
 Reload and restart:
 
@@ -89,6 +102,17 @@ sudo systemctl restart partybox.service
 ```bash
 curl -s http://127.0.0.1:5000/api/tv/status | jq '.state.spotify'
 ```
+
+To discover `SPOTIFY_DEVICE_ID`:
+
+1. Start playback from phone and set output device to PartyBox.
+2. Run:
+
+```bash
+curl -s http://127.0.0.1:5000/api/tv/status | jq -r '.state.spotify.device.id'
+```
+
+3. Put that ID in `/etc/partybox.env` as `SPOTIFY_DEVICE_ID=...` and restart `partybox.service`.
 
 Expected keys include:
 

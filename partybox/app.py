@@ -6,10 +6,14 @@ import re
 import json
 import time
 import shlex
+import secrets
+import ssl
+import base64
 import socket
 import subprocess
 import shutil
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -428,7 +432,9 @@ def _desktop_autostart_check() -> Dict[str, Any]:
         return result
 
 
-def _http_status_no_redirect(url: str, timeout: float = 2.5) -> Tuple[int, str]:
+def _http_status_no_redirect(
+    url: str, timeout: float = 2.5, insecure_tls: bool = False
+) -> Tuple[int, str, str]:
     req = urllib.request.Request(
         url,
         method="HEAD",
@@ -439,40 +445,70 @@ def _http_status_no_redirect(url: str, timeout: float = 2.5) -> Tuple[int, str]:
         def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
             return None
 
-    opener = urllib.request.build_opener(_NoRedirect)
+    handlers: list[Any] = [_NoRedirect()]
+    if insecure_tls:
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        handlers.append(urllib.request.HTTPSHandler(context=ctx))
+    opener = urllib.request.build_opener(*handlers)
 
     try:
         with opener.open(req, timeout=timeout) as resp:
-            return int(getattr(resp, "status", 0) or 0), ""
+            return int(getattr(resp, "status", 0) or 0), "", str(resp.headers.get("Location") or "")
     except urllib.error.HTTPError as e:
-        return int(getattr(e, "code", 0) or 0), str(getattr(e, "reason", "") or "")
+        return (
+            int(getattr(e, "code", 0) or 0),
+            str(getattr(e, "reason", "") or ""),
+            str(getattr(e, "headers", {}).get("Location") if getattr(e, "headers", None) else ""),
+        )
     except Exception as e:
-        return 0, str(e)
+        return 0, str(e), ""
 
 
 def _nginx_http_check() -> Dict[str, Any]:
     admin_key = DB.get_setting("admin_key", "JBOX")
     endpoint_specs = {
-        "tv": ("http://127.0.0.1/tv", 200),
-        "u": ("http://127.0.0.1/u", 200),
-        "user_redirect": ("http://127.0.0.1/user", 302),
-        "admin": (f"http://127.0.0.1/admin?key={admin_key}", 200),
+        "http_to_https_root": {
+            "url": "http://partybox.local/",
+            "expected": (301, 302),
+            "location_prefix": "https://",
+            "insecure_tls": False,
+        },
+        "https_tv": {"url": "https://127.0.0.1/tv", "expected": (200,), "insecure_tls": True},
+        "https_u": {"url": "https://127.0.0.1/u", "expected": (200,), "insecure_tls": True},
+        "https_user_redirect": {"url": "https://127.0.0.1/user", "expected": (302,), "insecure_tls": True},
+        "https_admin": {
+            "url": f"https://127.0.0.1/admin?key={urllib.parse.quote(admin_key)}",
+            "expected": (200,),
+            "insecure_tls": True,
+        },
     }
 
     per_endpoint: Dict[str, Any] = {}
     all_ok = True
 
-    for name, (url, expected) in endpoint_specs.items():
-        status, err = _http_status_no_redirect(url)
-        ok = status == expected
+    for name, spec in endpoint_specs.items():
+        url = str(spec.get("url") or "")
+        expected = tuple(int(x) for x in (spec.get("expected") or ()))
+        insecure = bool(spec.get("insecure_tls"))
+        location_prefix = str(spec.get("location_prefix") or "")
+        status, err, location = _http_status_no_redirect(url, insecure_tls=insecure)
+        ok = status in expected
+        if ok and location_prefix:
+            ok = location.startswith(location_prefix)
         if not ok:
             all_ok = False
         result: Dict[str, Any] = {
             "ok": ok,
             "url": url,
-            "expected_status": expected,
+            "expected_status": list(expected),
             "status": status,
         }
+        if location:
+            result["location"] = location
+        if location_prefix:
+            result["expected_location_prefix"] = location_prefix
         if err:
             result["error"] = err
         per_endpoint[name] = result
@@ -504,10 +540,11 @@ def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
         s.strip()
         for s in os.getenv(
             "PARTYBOX_HEALTH_REQUIRED_SERVICES",
-            "partybox.service,partybox-player.service,lightdm.service,nginx.service",
+            "partybox.service,lightdm.service,nginx.service,librespot.service",
         ).split(",")
         if s.strip()
     ]
+    av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
     service_checks: Dict[str, Any] = {}
     services_ok = True
     for unit in required_services:
@@ -516,6 +553,19 @@ def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
         service_checks[unit] = c
         if not bool(c.get("ok")):
             services_ok = False
+
+    player_check = _service_check("partybox-player.service", expected_user="partybox")
+    if av_mode == "spotify":
+        player_check["optional"] = True
+        player_check["n_a"] = True
+        player_check["ok"] = True
+        player_check["note"] = "n/a while Spotify backend is active"
+    else:
+        player_check["optional"] = False
+        if not bool(player_check.get("ok")):
+            services_ok = False
+    service_checks["partybox-player.service"] = player_check
+
     checks["services"] = {"ok": services_ok, "units": service_checks}
     ok = ok and services_ok
 
@@ -596,10 +646,94 @@ def create_app() -> Flask:
     def _spotify_snapshot() -> Dict[str, Any]:
         return spotify_client.get_state(force=False)
 
+    def _spotify_oauth_scope() -> str:
+        return os.getenv("SPOTIFY_SCOPE", "user-read-playback-state user-read-currently-playing").strip()
+
+    def _spotify_redirect_uri() -> str:
+        return os.getenv("SPOTIFY_REDIRECT_URI", "https://partybox.local/spotify/callback").strip()
+
+    def _spotify_exchange_code(code: str) -> Tuple[Optional[Dict[str, Any]], str]:
+        cid = (os.getenv("SPOTIFY_CLIENT_ID", "") or "").strip()
+        csec = (os.getenv("SPOTIFY_CLIENT_SECRET", "") or "").strip()
+        redirect_uri = _spotify_redirect_uri()
+        if not cid or not csec:
+            return None, "missing spotify client credentials in environment"
+        if not code:
+            return None, "missing oauth code"
+
+        body = urllib.parse.urlencode(
+            {"grant_type": "authorization_code", "code": code, "redirect_uri": redirect_uri}
+        ).encode("utf-8")
+
+        basic_raw = f"{cid}:{csec}".encode("utf-8")
+        basic_auth = base64.b64encode(basic_raw).decode("ascii")
+        req = urllib.request.Request(
+            "https://accounts.spotify.com/api/token",
+            method="POST",
+            data=body,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Authorization": f"Basic {basic_auth}",
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                payload = json.loads((resp.read() or b"{}").decode("utf-8", errors="ignore"))
+                return payload, ""
+        except urllib.error.HTTPError as e:
+            raw = b""
+            try:
+                raw = e.read() or b""
+            except Exception:
+                pass
+            detail = str(e.reason or "oauth_exchange_failed")
+            if raw:
+                try:
+                    j = json.loads(raw.decode("utf-8", errors="ignore"))
+                    detail = str(j.get("error_description") or j.get("error") or detail)
+                except Exception:
+                    pass
+            return None, detail
+        except Exception as e:
+            return None, str(e)
+
+    def _persist_env_key(key: str, value: str) -> Tuple[bool, str]:
+        env_path = Path(os.getenv("PARTYBOX_ENV_FILE", "/etc/partybox.env"))
+        if not key:
+            return False, "missing key"
+        value = (value or "").strip()
+        if not value:
+            return False, "missing value"
+        try:
+            existing = []
+            if env_path.exists():
+                existing = env_path.read_text(encoding="utf-8").splitlines()
+
+            out: list[str] = []
+            replaced = False
+            prefix = f"{key}="
+            for line in existing:
+                if line.startswith(prefix):
+                    out.append(f"{key}={value}")
+                    replaced = True
+                else:
+                    out.append(line)
+            if not replaced:
+                out.append(f"{key}={value}")
+
+            env_path.write_text("\\n".join(out).strip() + "\\n", encoding="utf-8")
+            return True, str(env_path)
+        except Exception as e:
+            return False, str(e)
+
     # ---------- Pages ----------
     @app.get("/")
     def index():
         return redirect(url_for("tv"))
+
+    @app.get("/health")
+    def health():
+        return jsonify({"ok": True, "ts": int(time.time())})
 
     @app.get("/tv")
     def tv():
@@ -816,6 +950,72 @@ def create_app() -> Flask:
         qid = DB.enqueue(catalog_id, note_text=note_text[:120] if note_text else None)
         return jsonify({"ok": True, "queue_id": qid})
 
+    @app.get("/spotify/auth")
+    def spotify_auth():
+        client_id = (os.getenv("SPOTIFY_CLIENT_ID", "") or "").strip()
+        if not client_id:
+            return jsonify({"ok": False, "error": "SPOTIFY_CLIENT_ID missing"}), 500
+
+        state = secrets.token_urlsafe(16)
+        DB.set_setting("spotify_oauth_state", state)
+        redirect_uri = _spotify_redirect_uri()
+        q = urllib.parse.urlencode(
+            {
+                "response_type": "code",
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "scope": _spotify_oauth_scope(),
+                "state": state,
+                "show_dialog": "true",
+            }
+        )
+        return redirect(f"https://accounts.spotify.com/authorize?{q}")
+
+    @app.get("/spotify/callback")
+    def spotify_callback():
+        err = (request.args.get("error", "") or "").strip()
+        if err:
+            return f"<h3>Spotify OAuth failed</h3><p>{err}</p>", 400
+
+        code = (request.args.get("code", "") or "").strip()
+        state = (request.args.get("state", "") or "").strip()
+        expected = (DB.get_setting("spotify_oauth_state", "") or "").strip()
+        if expected and state != expected:
+            return "<h3>Spotify OAuth failed</h3><p>State mismatch.</p>", 400
+        if not code:
+            return "<h3>Spotify OAuth failed</h3><p>Missing code.</p>", 400
+
+        token_payload, token_err = _spotify_exchange_code(code)
+        if not token_payload:
+            return f"<h3>Spotify OAuth failed</h3><p>{token_err}</p>", 400
+
+        refresh_token = str(token_payload.get("refresh_token") or "").strip()
+        if not refresh_token:
+            # Spotify may omit refresh_token on some re-auth cases; keep current if present.
+            refresh_token = (os.getenv("SPOTIFY_REFRESH_TOKEN", "") or "").strip()
+            if not refresh_token:
+                return "<h3>Spotify OAuth failed</h3><p>No refresh token returned.</p>", 400
+
+        spotify_client.refresh_token = refresh_token
+        spotify_client._access_token = ""
+        spotify_client._access_token_expires_at = 0.0
+        spotify_client.enabled = bool(spotify_client.client_id and spotify_client.client_secret and spotify_client.refresh_token)
+
+        ok_write, detail = _persist_env_key("SPOTIFY_REFRESH_TOKEN", refresh_token)
+        persist_line = (
+            f"Stored SPOTIFY_REFRESH_TOKEN in {detail}."
+            if ok_write
+            else f"Token exchange succeeded but could not update /etc/partybox.env automatically ({detail})."
+        )
+        return f"""
+        <html><body style="font-family: sans-serif; padding: 24px;">
+        <h2>Spotify OAuth Complete</h2>
+        <p>{persist_line}</p>
+        <p>Restart PartyBox service to ensure environment and in-memory token are aligned:</p>
+        <pre>sudo systemctl restart partybox.service</pre>
+        </body></html>
+        """
+        
     # ---- Admin-only endpoints ----
     @app.get("/api/admin/health")
     def api_admin_health():

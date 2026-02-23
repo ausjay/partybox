@@ -33,20 +33,37 @@ check_service_active() {
 check_http_status() {
   local label="$1"
   local url="$2"
-  local expected="$3"
+  local expected_pattern="$3"
+  local curl_extra="${4:-}"
   local status
 
   # Use -I for HEAD request and parse first response line status code.
-  status="$(curl -fsS -I "$url" 2>/dev/null | awk 'NR==1 {print $2}')"
+  # shellcheck disable=SC2086
+  status="$(curl -fsS -I $curl_extra "$url" 2>/dev/null | awk 'NR==1 {print $2}')"
   if [[ -z "${status}" ]]; then
     fail "${label} (${url}) no HTTP status"
     return
   fi
 
-  if [[ "${status}" == "${expected}" ]]; then
+  if [[ "${status}" =~ ^(${expected_pattern})$ ]]; then
     ok "${label} (${url}) -> ${status}"
   else
-    fail "${label} (${url}) expected ${expected}, got ${status}"
+    fail "${label} (${url}) expected ${expected_pattern}, got ${status}"
+  fi
+}
+
+check_http_redirect_https() {
+  local label="$1"
+  local url="$2"
+  local status location
+
+  status="$(curl -fsS -I "$url" 2>/dev/null | awk 'NR==1 {print $2}')"
+  location="$(curl -fsS -I "$url" 2>/dev/null | awk 'BEGIN{IGNORECASE=1} /^Location:/ {print $2; exit}' | tr -d '\r')"
+
+  if [[ "$status" =~ ^(301|302)$ ]] && [[ "$location" =~ ^https:// ]]; then
+    ok "${label} (${url}) -> ${status}, ${location}"
+  else
+    fail "${label} (${url}) expected 301/302 + https:// location, got status=${status:-none}, location=${location:-none}"
   fi
 }
 
@@ -127,10 +144,11 @@ echo "PartyBox health check"
 check_service_active nginx
 check_service_active partybox
 
-check_http_status "nginx /tv" "http://127.0.0.1/tv" "200"
-check_http_status "nginx /u" "http://127.0.0.1/u" "200"
-check_http_status "nginx /user redirect" "http://127.0.0.1/user" "302"
-check_http_status "nginx /admin?key=JBOX" "http://127.0.0.1/admin?key=JBOX" "200"
+check_http_redirect_https "nginx http->https root redirect" "http://partybox.local/"
+check_http_status "nginx https /tv" "https://127.0.0.1/tv" "200" "-k"
+check_http_status "nginx https /u" "https://127.0.0.1/u" "200" "-k"
+check_http_status "nginx https /user redirect" "https://127.0.0.1/user" "302" "-k"
+check_http_status "nginx https /admin?key=JBOX" "https://127.0.0.1/admin?key=JBOX" "200" "-k"
 
 check_http_status "flask direct /tv" "http://127.0.0.1:5000/tv" "200"
 check_tv_status_json

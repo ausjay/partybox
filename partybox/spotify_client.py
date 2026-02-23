@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import time
+import base64
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -19,6 +21,7 @@ class SpotifyClient:
         client_secret: str,
         refresh_token: str,
         device_name: str,
+        device_id: str = "",
         poll_seconds: float = 2.0,
         timeout_seconds: float = 2.0,
     ) -> None:
@@ -26,6 +29,7 @@ class SpotifyClient:
         self.client_secret = (client_secret or "").strip()
         self.refresh_token = (refresh_token or "").strip()
         self.device_name = (device_name or "UJ-PartyBox").strip()
+        self.device_id = (device_id or "").strip()
         self.poll_seconds = max(0.5, float(poll_seconds or 2.0))
         self.timeout_seconds = max(0.5, float(timeout_seconds or 2.0))
 
@@ -47,6 +51,7 @@ class SpotifyClient:
             client_secret=os.getenv("SPOTIFY_CLIENT_SECRET", ""),
             refresh_token=os.getenv("SPOTIFY_REFRESH_TOKEN", ""),
             device_name=os.getenv("SPOTIFY_DEVICE_NAME", "UJ-PartyBox"),
+            device_id=os.getenv("SPOTIFY_DEVICE_ID", ""),
             poll_seconds=float(os.getenv("SPOTIFY_POLL_SECONDS", "2") or "2"),
             timeout_seconds=2.0,
         )
@@ -124,18 +129,26 @@ class SpotifyClient:
             {
                 "grant_type": "refresh_token",
                 "refresh_token": self.refresh_token,
-                "client_id": self.client_id,
-                "client_secret": self.client_secret,
             }
         ).encode("utf-8")
+
+        basic_raw = f"{self.client_id}:{self.client_secret}".encode("utf-8")
+        basic_auth = base64.b64encode(basic_raw).decode("ascii")
 
         status, payload, err = self._http_json(
             "POST",
             self.TOKEN_URL,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Authorization": f"Basic {basic_auth}",
+            },
             data=body,
         )
         if status != 200 or not payload:
+            if payload:
+                detail = str(payload.get("error_description") or payload.get("error") or "").strip()
+                if detail:
+                    return False, detail
             return False, err or f"token_refresh_status_{status}"
 
         token = str(payload.get("access_token") or "")
@@ -195,8 +208,13 @@ class SpotifyClient:
         return self._me_cache
 
     @staticmethod
-    def _device_matches(device_name: str, expected_name: str) -> bool:
-        return (device_name or "").strip().lower() == (expected_name or "").strip().lower()
+    def _normalize_name(name: str) -> str:
+        return re.sub(r"\\s+", " ", (name or "").strip()).casefold()
+
+    def _device_matches(self, device_name: str, device_id: str) -> bool:
+        if self.device_id:
+            return (device_id or "").strip() == self.device_id
+        return self._normalize_name(device_name) == self._normalize_name(self.device_name)
 
     @staticmethod
     def _pick_images(item: Dict[str, Any]) -> Dict[str, str]:
@@ -243,7 +261,15 @@ class SpotifyClient:
 
         device = payload.get("device") if isinstance(payload.get("device"), dict) else {}
         device_name = str(device.get("name") or "")
-        on_partybox = self._device_matches(device_name, self.device_name)
+        device_id = str(device.get("id") or "")
+
+        if not device_name and not device_id:
+            out = self._empty_state(ok=True, state="inactive")
+            if me and me.get("display_name"):
+                out["account"] = {"display_name": str(me.get("display_name"))}
+            return out
+
+        on_partybox = self._device_matches(device_name, device_id)
 
         item = payload.get("item") if isinstance(payload.get("item"), dict) else {}
         artists = []
@@ -252,8 +278,6 @@ class SpotifyClient:
                 artists.append(str(a.get("name")))
 
         state = "playing" if bool(payload.get("is_playing")) else "paused"
-        if not on_partybox:
-            state = "inactive"
 
         out: Dict[str, Any] = {
             "ok": True,
@@ -261,7 +285,7 @@ class SpotifyClient:
             "spotify_on_partybox": bool(on_partybox),
             "device": {
                 "name": device_name,
-                "id": str(device.get("id") or ""),
+                "id": device_id,
                 "volume_percent": int(device.get("volume_percent") or 0),
             },
             "track": {

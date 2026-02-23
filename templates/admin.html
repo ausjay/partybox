@@ -367,6 +367,7 @@
         if (s.sub_state) bits.push(s.sub_state);
         if (s.user) bits.push(`user=${s.user}`);
         if (s.expected_user) bits.push(`expected=${s.expected_user}`);
+        if (s.note) bits.push(String(s.note));
         lines.push(`- ${name}: ${bits.join(", ")}`);
       });
     }
