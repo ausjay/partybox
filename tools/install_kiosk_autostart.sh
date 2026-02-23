@@ -17,7 +17,7 @@ AUTOSTART_DIR="$TARGET_HOME/.config/autostart"
 BIN_DIR="$TARGET_HOME/.local/bin"
 LAUNCH_SCRIPT="$BIN_DIR/partybox-open-tv.sh"
 DESKTOP_FILE="$AUTOSTART_DIR/partybox-tv.desktop"
-TV_URL="${PARTYBOX_TV_URL:-http://127.0.0.1/tv}"
+TV_URL="${PARTYBOX_TV_URL:-http://127.0.0.1:5000/tv}"
 
 mkdir -p "$AUTOSTART_DIR" "$BIN_DIR"
 
@@ -25,7 +25,7 @@ cat > "$LAUNCH_SCRIPT" <<'SCRIPT'
 #!/usr/bin/env bash
 set -euo pipefail
 
-TV_URL="${PARTYBOX_TV_URL:-http://127.0.0.1/tv}"
+TV_URL="${PARTYBOX_TV_URL:-http://127.0.0.1:5000/tv}"
 # Snap Chromium cannot write many hidden paths under $HOME; default to a visible dir.
 KIOSK_PROFILE_DIR="${PARTYBOX_KIOSK_PROFILE_DIR:-$HOME/partybox-kiosk-profile}"
 
@@ -37,7 +37,7 @@ for _ in $(seq 1 60); do
 done
 
 if command -v pgrep >/dev/null 2>&1; then
-  if pgrep -fa "(chromium|chrome|firefox).*(/tv|partybox.local/tv|127.0.0.1/tv)" >/dev/null 2>&1; then
+  if pgrep -fa "(chromium|chrome|firefox).*(/tv|partybox.local/tv|127.0.0.1/tv|127.0.0.1:5000/tv)" >/dev/null 2>&1; then
     exit 0
   fi
 fi
