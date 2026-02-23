@@ -399,7 +399,9 @@
       lines.push(`Nginx HTTP: ${yn(!!nginxHttp.ok)}`);
       nginxNames.forEach((name) => {
         const c = nginxChecks[name] || {};
-        const expected = Number(c.expected_status || 0);
+        const expected = Array.isArray(c.expected_status)
+          ? c.expected_status.join("|")
+          : String(c.expected_status || "n/a");
         const status = Number(c.status || 0);
         const verdict = yn(!!c.ok);
         lines.push(`- ${name}: ${verdict} (${status}, expected ${expected})`);

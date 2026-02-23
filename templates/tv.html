@@ -21,7 +21,7 @@
   </div>
 
   <!-- Top-left status pills -->
-  <div style="position: fixed; left: 16px; top: 16px; display:flex; gap:10px; align-items:center; z-index: 50;">
+  <div id="tv_top_pills" style="position: fixed; left: 16px; top: 16px; display:flex; gap:10px; align-items:center; z-index: 50;">
     <div class="pill">
       <span id="tv_dot" class="dot warn"></span>
       <span id="mode_label">PartyBox</span>
@@ -145,14 +145,19 @@
       const s = STATE && STATE.spotify ? STATE.spotify : null;
       const onPartybox = !!(s && s.spotify_on_partybox);
       const active = !!(s && s.ok && onPartybox && (s.state === "playing" || s.state === "paused"));
+      const acctName = s && s.account && s.account.display_name ? s.account.display_name : "";
+      const acct = acctName ? ` • Spotify Account: ${acctName}` : "";
 
       if (av !== "spotify") {
         banner.classList.add("hidden");
         panel.classList.add("hidden");
+        document.body.classList.remove("spotify-mode");
+        el("tv_top_pills").style.display = "flex";
         return;
       }
 
-      const acct = s && s.account && s.account.display_name ? ` • Spotify Account: ${s.account.display_name}` : "";
+      document.body.classList.add("spotify-mode");
+      el("tv_top_pills").style.display = "none";
       if (active) {
         bannerText.textContent = `Spotify Mode Active${acct}`;
       } else {
@@ -161,7 +166,6 @@
       }
       banner.classList.remove("hidden");
       panel.classList.toggle("hidden", !active);
-      el("tv_now_pill").style.display = "none";
 
       if (!active) return;
 
@@ -206,7 +210,7 @@
 
       el("tv_qr_idle").classList.toggle("hidden", !idlePartybox);
 
-      if (paused) {
+      if (paused && av !== "spotify") {
         const reason = STATE.now ? "PartyBox playback is paused. Resume to continue this selection." : "PartyBox playback is paused by Admin.";
         setPausedUi(true, reason);
         return;

@@ -546,31 +546,48 @@ def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
     ]
     av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
     service_checks: Dict[str, Any] = {}
-    services_ok = True
     for unit in required_services:
         expected_user = "partybox" if unit.startswith("partybox") else None
         c = _service_check(unit, expected_user=expected_user)
         service_checks[unit] = c
-        if not bool(c.get("ok")):
-            services_ok = False
 
-    player_check = _service_check("partybox-player.service", expected_user="partybox")
+    require_player = os.getenv("PARTYBOX_HEALTH_REQUIRE_PLAYER_SERVICE", "0") == "1"
+    player_expected_user = (
+        os.getenv("PARTYBOX_PLAYER_SERVICE_USER", "partybox").strip() if require_player else None
+    )
+    player_check = _service_check("partybox-player.service", expected_user=player_expected_user)
+    # partybox-player may be inactive depending on playback backend and flow.
+    # Keep it visible in health details, but optional by default so it does not
+    # degrade global health on its own.
+    player_check["optional"] = not require_player
     if av_mode == "spotify":
-        player_check["optional"] = True
         player_check["n_a"] = True
         player_check["ok"] = True
         player_check["note"] = "n/a while Spotify backend is active"
-    else:
-        player_check["optional"] = False
-        if not bool(player_check.get("ok")):
-            services_ok = False
+    elif not require_player and not bool(player_check.get("ok")):
+        player_check["ok"] = True
+        player_check["note"] = "optional service (inactive is allowed)"
     service_checks["partybox-player.service"] = player_check
+
+    services_ok = True
+    for unit_result in service_checks.values():
+        unit_result = unit_result or {}
+        if unit_result.get("optional"):
+            continue
+        if not bool(unit_result.get("ok", False)):
+            services_ok = False
+            break
 
     checks["services"] = {"ok": services_ok, "units": service_checks}
     ok = ok and services_ok
 
     hb_max_age = int(os.getenv("PARTYBOX_HEALTH_TV_HEARTBEAT_MAX_AGE_SECONDS", "20"))
     hb = _tv_heartbeat_check(max_age_seconds=hb_max_age)
+    if av_mode == "spotify":
+        hb["optional"] = True
+        hb["n_a"] = True
+        hb["ok"] = True
+        hb["note"] = "n/a while Spotify backend is active"
     checks["tv_heartbeat"] = hb
     ok = ok and bool(hb.get("ok"))
 
@@ -595,7 +612,20 @@ def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
         checks["desktop_autostart"] = desktop_autostart
         ok = ok and bool(desktop_autostart.get("ok"))
 
-    failed = [name for name, result in checks.items() if not bool((result or {}).get("ok", False))]
+    failed: list[str] = []
+    for name, result in checks.items():
+        result = result or {}
+        if name == "services":
+            units = result.get("units") if isinstance(result.get("units"), dict) else {}
+            for unit_name, unit_result in units.items():
+                unit_result = unit_result or {}
+                if unit_result.get("optional"):
+                    continue
+                if not bool(unit_result.get("ok", False)):
+                    failed.append(f"service:{unit_name}")
+            continue
+        if not bool(result.get("ok", False)):
+            failed.append(name)
     summary = {"failed": len(failed), "failed_checks": failed}
 
     payload = {
