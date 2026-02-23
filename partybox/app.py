@@ -5,6 +5,7 @@ import os
 import re
 import json
 import time
+import shlex
 import socket
 import subprocess
 import shutil
@@ -360,6 +361,124 @@ def _memory_check() -> Dict[str, Any]:
         return {"ok": False, "error": str(e), "max_used_pct": max_used_pct}
 
 
+def _desktop_autostart_check() -> Dict[str, Any]:
+    desktop_file = os.getenv(
+        "PARTYBOX_HEALTH_KIOSK_AUTOSTART_FILE",
+        "/home/partybox/.config/autostart/partybox-tv.desktop",
+    )
+    expected_path_fragment = os.getenv("PARTYBOX_HEALTH_KIOSK_EXPECTED_PATH_FRAGMENT", "/tv")
+
+    result: Dict[str, Any] = {
+        "ok": False,
+        "path": desktop_file,
+        "exists": False,
+        "contains_expected_path": False,
+        "enabled": False,
+    }
+
+    try:
+        p = Path(desktop_file)
+        if not p.exists() or not p.is_file():
+            result["error"] = "autostart desktop file missing"
+            return result
+
+        result["exists"] = True
+        raw = p.read_text(encoding="utf-8", errors="ignore")
+        lowered = raw.lower()
+
+        enabled = "hidden=true" not in lowered and "x-gnome-autostart-enabled=false" not in lowered
+        contains_expected = expected_path_fragment in raw
+        launcher_path = ""
+
+        if not contains_expected:
+            exec_line = ""
+            for line in raw.splitlines():
+                if line.lower().startswith("exec="):
+                    exec_line = line[5:].strip()
+                    break
+
+            if exec_line:
+                result["exec"] = exec_line
+                try:
+                    argv = shlex.split(exec_line)
+                except Exception:
+                    argv = [exec_line]
+
+                if argv:
+                    candidate = os.path.expanduser(argv[0])
+                    if os.path.isabs(candidate):
+                        launcher_path = candidate
+                        result["launcher_path"] = launcher_path
+                        if os.path.isfile(launcher_path):
+                            launcher_raw = Path(launcher_path).read_text(encoding="utf-8", errors="ignore")
+                            contains_expected = expected_path_fragment in launcher_raw
+
+        result["enabled"] = enabled
+        result["contains_expected_path"] = contains_expected
+        result["ok"] = bool(enabled and contains_expected)
+        if not result["ok"]:
+            if not enabled:
+                result["error"] = "autostart entry appears disabled"
+            elif not contains_expected:
+                result["error"] = f"autostart file does not reference expected path fragment '{expected_path_fragment}'"
+        return result
+    except Exception as e:
+        result["error"] = str(e)
+        return result
+
+
+def _http_status_no_redirect(url: str, timeout: float = 2.5) -> Tuple[int, str]:
+    req = urllib.request.Request(
+        url,
+        method="HEAD",
+        headers={"User-Agent": "partybox-health/1.0"},
+    )
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[override]
+            return None
+
+    opener = urllib.request.build_opener(_NoRedirect)
+
+    try:
+        with opener.open(req, timeout=timeout) as resp:
+            return int(getattr(resp, "status", 0) or 0), ""
+    except urllib.error.HTTPError as e:
+        return int(getattr(e, "code", 0) or 0), str(getattr(e, "reason", "") or "")
+    except Exception as e:
+        return 0, str(e)
+
+
+def _nginx_http_check() -> Dict[str, Any]:
+    admin_key = DB.get_setting("admin_key", "JBOX")
+    endpoint_specs = {
+        "tv": ("http://127.0.0.1/tv", 200),
+        "u": ("http://127.0.0.1/u", 200),
+        "user_redirect": ("http://127.0.0.1/user", 302),
+        "admin": (f"http://127.0.0.1/admin?key={admin_key}", 200),
+    }
+
+    per_endpoint: Dict[str, Any] = {}
+    all_ok = True
+
+    for name, (url, expected) in endpoint_specs.items():
+        status, err = _http_status_no_redirect(url)
+        ok = status == expected
+        if not ok:
+            all_ok = False
+        result: Dict[str, Any] = {
+            "ok": ok,
+            "url": url,
+            "expected_status": expected,
+            "status": status,
+        }
+        if err:
+            result["error"] = err
+        per_endpoint[name] = result
+
+    return {"ok": all_ok, "checks": per_endpoint}
+
+
 def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
     checks: Dict[str, Any] = {}
     ok = True
@@ -384,7 +503,7 @@ def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
         s.strip()
         for s in os.getenv(
             "PARTYBOX_HEALTH_REQUIRED_SERVICES",
-            "partybox.service,partybox-player.service,lightdm.service",
+            "partybox.service,partybox-player.service,lightdm.service,nginx.service",
         ).split(",")
         if s.strip()
     ]
@@ -408,6 +527,10 @@ def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
     checks["internet"] = internet
     ok = ok and bool(internet.get("ok"))
 
+    nginx_http = _nginx_http_check()
+    checks["nginx_http"] = nginx_http
+    ok = ok and bool(nginx_http.get("ok"))
+
     filesystem = _filesystem_check()
     checks["filesystem"] = filesystem
     ok = ok and bool(filesystem.get("ok"))
@@ -415,6 +538,11 @@ def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
     memory = _memory_check()
     checks["memory"] = memory
     ok = ok and bool(memory.get("ok"))
+
+    if os.getenv("PARTYBOX_HEALTH_CHECK_DESKTOP_AUTOSTART", "1") == "1":
+        desktop_autostart = _desktop_autostart_check()
+        checks["desktop_autostart"] = desktop_autostart
+        ok = ok and bool(desktop_autostart.get("ok"))
 
     failed = [name for name, result in checks.items() if not bool((result or {}).get("ok", False))]
     summary = {"failed": len(failed), "failed_checks": failed}
@@ -439,6 +567,8 @@ def create_app() -> Flask:
         DB.set_setting("tv_muted", "0")
     if DB.get_setting("av_mode", None) is None:
         DB.set_setting("av_mode", "partybox")
+    if DB.get_setting("tv_qr_enabled", None) is None:
+        DB.set_setting("tv_qr_enabled", "1")
 
     # Optional: after restart, default to PAUSED so TV does not autoplay.
     # Override with PARTYBOX_START_PAUSED=0 if you want autoplay again.
@@ -491,6 +621,7 @@ def create_app() -> Flask:
         paused = _bool_setting("tv_paused", "0")
         muted = _bool_setting("tv_muted", "0")
         av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
+        tv_qr_enabled = _bool_setting("tv_qr_enabled", "1")
 
         return render_template(
             "admin.html",
@@ -501,6 +632,7 @@ def create_app() -> Flask:
             queue=q,
             key=key,
             av_mode=av_mode,
+            tv_qr_enabled=tv_qr_enabled,
         )
 
     @app.get("/media/<path:filename>")
@@ -533,6 +665,7 @@ def create_app() -> Flask:
         paused = _bool_setting("tv_paused", "0")
         muted = _bool_setting("tv_muted", "0")
         av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
+        tv_qr_enabled = _bool_setting("tv_qr_enabled", "1")
 
         now = DB.get_now_playing()
         up = DB.peek_next()
@@ -554,6 +687,7 @@ def create_app() -> Flask:
                     "paused": True,
                     "muted": muted,
                     "av_mode": av_mode,
+                    "tv_qr_enabled": tv_qr_enabled,
                     "mode": "paused",
                     "now": _pack(now) if now else (_pack(up) if up else None),
                     "up_next": _pack(up) if (now and up) else None,
@@ -568,6 +702,7 @@ def create_app() -> Flask:
                     "paused": False,
                     "muted": muted,
                     "av_mode": av_mode,
+                    "tv_qr_enabled": tv_qr_enabled,
                     "mode": "playing",
                     "now": _pack(now),
                     "up_next": _pack(up) if up else None,
@@ -582,6 +717,7 @@ def create_app() -> Flask:
                     "paused": False,
                     "muted": muted,
                     "av_mode": av_mode,
+                    "tv_qr_enabled": tv_qr_enabled,
                     "mode": "queue",
                     "now": _pack(up),
                     "up_next": None,
@@ -594,6 +730,7 @@ def create_app() -> Flask:
                 "paused": False,
                 "muted": muted,
                 "av_mode": av_mode,
+                "tv_qr_enabled": tv_qr_enabled,
                 "mode": "empty",
                 "now": None,
                 "up_next": None,
@@ -812,6 +949,15 @@ def create_app() -> Flask:
         locked = bool(data.get("locked", False))
         DB.set_setting("requests_locked", "1" if locked else "0")
         return jsonify({"ok": True})
+
+    @app.post("/api/admin/tv_qr")
+    def api_admin_tv_qr():
+        _admin_or_403()
+
+        data = request.get_json(force=True, silent=True) or {}
+        enabled = bool(data.get("enabled", True))
+        DB.set_setting("tv_qr_enabled", "1" if enabled else "0")
+        return jsonify({"ok": True, "enabled": enabled})
 
     @app.post("/api/admin/skip")
     def api_admin_skip():

@@ -9,18 +9,14 @@
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 
-<body>
+<body class="userPage">
   <div class="appBg">
     <div class="page">
 
       <!-- Topbar -->
       <div class="topbar">
         <div class="brandRow">
-          <div class="brandIcon"></div>
-          <div class="brandText">
-            <div class="headline">PartyBox</div>
-            <div class="tagline">Pick Next Video</div>
-          </div>
+          <img class="brandWordmark" src="/static/partybox_t.png" alt="PartyBox" />
         </div>
 
         <div class="topActions">
@@ -46,8 +42,8 @@
         <div class="panel panel-browse" style="grid-column: span 8;">
           <div class="panelHeader">
             <div>
-              <div class="kicker">Browse</div>
-              <div class="hint">Tap a card to add it to the queue</div>
+              <div class="kicker">Catalog</div>
+              <div class="hint">Browse and pick the next video to add to the queue.</div>
             </div>
 
             <div class="btnGroup">
@@ -62,10 +58,6 @@
               <button class="btn ghost" id="btn_clear">Clear</button>
             </div>
 
-            <div class="muted" style="margin-top: 6px;">
-              Tip: if the TV is paused, your selection will start when Admin resumes.
-            </div>
-
             <div style="margin-top: 14px;">
               <h2>Results</h2>
               <div id="results" class="list" style="margin-top: 10px;"></div>
@@ -74,45 +66,44 @@
           </div>
         </div>
 
-        <!-- Right: Now / Up Next -->
-        <div class="panel panel-now" style="grid-column: span 4;">
-          <div class="panelHeader">
-            <div>
-              <div class="kicker">Now Playing</div>
-              <div class="hint" id="now_mode_hint">—</div>
-            </div>
-            <span id="now_badge" class="badge">—</span>
-          </div>
-
-          <div class="panelInner">
-            <div class="card">
-              <div class="title" id="now_title">—</div>
-              <div class="sub" id="now_note" style="display:none;"></div>
+        <!-- Right: Now / Queue -->
+        <div class="panelStack panel-side" style="grid-column: span 4;">
+          <div class="panel panel-now">
+            <div class="panelHeader">
+              <div class="kicker">Now</div>
             </div>
 
-            <div class="upnext-stack" style="margin-top: 14px; display:none;">
-              <div class="upnext-header">
-                <h2>Up Next</h2>
-                <button id="btn_upnext_toggle" class="btn small ghost">Show all</button>
+            <div class="panelInner">
+              <div class="now-current-block">
+                <div class="card">
+                  <div class="title" id="now_title">—</div>
+                  <div class="sub" id="now_note" style="display:none;"></div>
+                </div>
               </div>
-              <div class="muted" id="up_next_empty" style="margin-top: 8px;">Queue is empty.</div>
-              <div id="up_next_list" class="list" style="display:none; margin-top: 10px;"></div>
-              <div class="muted" id="up_next_more" style="display:none; margin-top: 8px;"></div>
-            </div>
-          </div>
-        </div>
 
-        <!-- Full width: Queue (hidden on mobile) -->
-        <div class="panel panel-queue" style="grid-column: span 12;">
-          <div class="panelHeader">
-            <div>
-              <div class="kicker">Queue</div>
-              <div class="hint">What will play after “Now Playing”</div>
+              <div class="upnext-stack" style="display:none;">
+                <div class="upnext-header section-split">
+                  <h2>Up Next</h2>
+                  <button id="btn_upnext_toggle" class="btn small ghost">Show all</button>
+                </div>
+                <div class="muted" id="up_next_empty" style="margin-top: 8px;">Queue is empty.</div>
+                <div id="up_next_list" class="list" style="display:none; margin-top: 10px;"></div>
+                <div class="muted" id="up_next_more" style="display:none; margin-top: 8px;"></div>
+              </div>
             </div>
           </div>
-          <div class="panelInner">
-            <div id="queue_list" class="list"></div>
-            <div id="queue_empty" class="muted" style="display:none;">Queue is empty.</div>
+
+          <div class="panel panel-queue">
+            <div class="panelHeader">
+              <div>
+                <div class="kicker">Queue</div>
+                <div class="hint" id="queue_hint">What will play after “Now Playing”</div>
+              </div>
+            </div>
+            <div class="panelInner">
+              <div id="queue_list" class="list"></div>
+              <div id="queue_empty" class="muted" style="display:none;">Queue is empty.</div>
+            </div>
           </div>
         </div>
       </div>
@@ -177,25 +168,29 @@
       for (const item of list) {
         const row = document.createElement("button");
         row.type = "button";
-        row.className = "listrow";
+        row.className = "listrow catalog-row";
         row.style.cursor = disable ? "not-allowed" : "pointer";
         row.disabled = disable;
 
         const left = document.createElement("div");
         left.className = "grow";
 
-        const title = document.createElement("div");
-        title.className = "title ellip";
-        title.textContent = item.title || "(untitled)";
-
-        left.appendChild(title);
+        const titleLine = document.createElement("div");
+        titleLine.className = "catalog-title-line";
 
         const badge = document.createElement("span");
-        badge.className = "badge";
+        badge.className = "badge catalog-add-badge";
         badge.textContent = "Add";
 
+        const title = document.createElement("div");
+        title.className = "title ellip catalog-title";
+        title.textContent = item.title || "(untitled)";
+
+        titleLine.appendChild(badge);
+        titleLine.appendChild(title);
+        left.appendChild(titleLine);
+
         row.appendChild(left);
-        row.appendChild(badge);
 
         row.addEventListener("click", () => requestVideo(item.id));
 
@@ -273,17 +268,25 @@
     function updateNowPanel() {
       if (!STATE) return;
 
-      const mode = (STATE.mode || "").toLowerCase();
-      el("now_mode_hint").textContent = mode ? mode : "—";
-
-      const badge = el("now_badge");
-      badge.className = "badge";
-      if (mode === "playing") badge.classList.add("playing");
-      if (mode === "paused") badge.classList.add("paused");
-      if (STATE.locked) badge.classList.add("locked");
-      badge.textContent = mode ? mode.toUpperCase() : "—";
-
+      const av = (STATE.av_mode || AV_MODE || "partybox").toLowerCase();
       const now = STATE.now;
+
+      if (av === "spotify") {
+        el("queue_hint").textContent = "Queued for when PartyBox mode resumes";
+
+        if (now && now.title) {
+          el("now_title").textContent = now.title;
+        } else {
+          el("now_title").textContent = "Spotify is active";
+        }
+
+        el("now_note").style.display = "block";
+        el("now_note").textContent = "Video playback is paused while Spotify is active.";
+        return;
+      }
+
+      el("queue_hint").textContent = "What will play after “Now Playing”";
+
       if (!now) {
         el("now_title").textContent = "—";
         el("now_note").style.display = "none";
@@ -300,6 +303,24 @@
 
     }
 
+    function isSameAsNowPlaying(q) {
+      if (!STATE || !STATE.now || !q) return false;
+      const now = STATE.now;
+
+      const ids = [
+        ["id", "id"],
+        ["catalog_id", "catalog_id"],
+        ["youtube_id", "youtube_id"],
+      ];
+      for (const [qk, nk] of ids) {
+        if (q[qk] != null && now[nk] != null && String(q[qk]) === String(now[nk])) return true;
+      }
+
+      const qt = String(q.title || "").trim().toLowerCase();
+      const nt = String(now.title || "").trim().toLowerCase();
+      return !!(qt && nt && qt === nt);
+    }
+
     function renderUpNext(items) {
       const list = el("up_next_list");
       const more = el("up_next_more");
@@ -307,7 +328,11 @@
       const toggle = el("btn_upnext_toggle");
       list.innerHTML = "";
 
-      const clean = (items || []).filter(q => String(q.status || "").toLowerCase() !== "playing");
+      const clean = (items || []).filter((q) => {
+        if (String(q.status || "").toLowerCase() === "playing") return false;
+        if (isSameAsNowPlaying(q)) return false;
+        return true;
+      });
 
       if (!clean.length) {
         empty.style.display = "block";
@@ -341,12 +366,7 @@
           left.appendChild(meta);
         }
 
-        const b = document.createElement("span");
-        b.className = "badge";
-        b.textContent = q.status ? String(q.status).toUpperCase() : "QUEUED";
-
         row.appendChild(left);
-        row.appendChild(b);
         list.appendChild(row);
       });
 
@@ -368,13 +388,19 @@
       const list = el("queue_list");
       list.innerHTML = "";
 
-      if (!items || !items.length) {
+      const clean = (items || []).filter((q) => {
+        if (String(q.status || "").toLowerCase() === "playing") return false;
+        if (isSameAsNowPlaying(q)) return false;
+        return true;
+      });
+
+      if (!clean.length) {
         el("queue_empty").style.display = "block";
         return;
       }
       el("queue_empty").style.display = "none";
 
-      items.forEach((q, idx) => {
+      clean.forEach((q, idx) => {
         const row = document.createElement("div");
         row.className = "listrow";
 
@@ -394,12 +420,7 @@
           left.appendChild(meta);
         }
 
-        const b = document.createElement("span");
-        b.className = "badge";
-        b.textContent = q.status ? String(q.status).toUpperCase() : "QUEUED";
-
         row.appendChild(left);
-        row.appendChild(b);
         list.appendChild(row);
       });
     }

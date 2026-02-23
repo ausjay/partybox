@@ -80,3 +80,16 @@ curl -I "http://partybox.local/admin?key=JBOX"
 ```
 
 This exits with non-zero status on failure.
+
+## Kiosk Boot to `/tv`
+
+Install desktop autostart for the appliance user:
+
+```bash
+./tools/install_kiosk_autostart.sh partybox
+```
+
+This creates:
+
+- `/home/partybox/.local/bin/partybox-open-tv.sh`
+- `/home/partybox/.config/autostart/partybox-tv.desktop`

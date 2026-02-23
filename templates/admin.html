@@ -10,11 +10,8 @@
     <!-- Top Bar -->
     <div class="topbar">
       <div class="brandRow">
-        <div class="brandIcon"></div>
-        <div class="brandText">
-          <div class="headline">PartyBox Admin</div>
-          <div class="tagline">Command Center • touch-friendly • dark neon</div>
-        </div>
+        <img class="brandWordmark" src="/static/partybox_t.png" alt="PartyBox" />
+        <div class="brandAdminTag">Admin</div>
       </div>
 
       <div class="topActions">
@@ -131,6 +128,10 @@
             <div class="btnGroup queueControls">
               <button id="btn_lock" class="btn {% if locked %}primary{% else %}ghost{% endif %}" onclick="toggleLock()">
                 {{ "Unlock Requests" if locked else "Lock Requests" }}
+              </button>
+
+              <button id="btn_qr_toggle" class="btn {% if tv_qr_enabled %}primary{% else %}ghost{% endif %}" onclick="toggleTvQr()">
+                {{ "Hide TV QR" if tv_qr_enabled else "Show TV QR" }}
               </button>
 
               <button class="btn ghost" onclick="clearQueue()">Clear Queue</button>
@@ -390,6 +391,20 @@
       }
     }
 
+    const nginxHttp = checks.nginx_http || {};
+    const nginxChecks = nginxHttp.checks || {};
+    const nginxNames = Object.keys(nginxChecks).sort();
+    if (nginxNames.length) {
+      lines.push(`Nginx HTTP: ${yn(!!nginxHttp.ok)}`);
+      nginxNames.forEach((name) => {
+        const c = nginxChecks[name] || {};
+        const expected = Number(c.expected_status || 0);
+        const status = Number(c.status || 0);
+        const verdict = yn(!!c.ok);
+        lines.push(`- ${name}: ${verdict} (${status}, expected ${expected})`);
+      });
+    }
+
     const fs = checks.filesystem || {};
     const fsPaths = fs.paths || {};
     const fsPathNames = Object.keys(fsPaths).sort();
@@ -411,6 +426,16 @@
         lines.push(`Memory: FAIL (${mem.error})`);
       } else {
         lines.push(`Memory: ${yn(!!mem.ok)} (${mem.used_pct}% used, max ${mem.max_used_pct}%)`);
+      }
+    }
+
+    const desktop = checks.desktop_autostart || {};
+    if (Object.keys(desktop).length) {
+      if (desktop.error) {
+        lines.push(`Desktop autostart: FAIL (${desktop.error})`);
+      } else {
+        const path = desktop.path ? ` (${desktop.path})` : "";
+        lines.push(`Desktop autostart: ${yn(!!desktop.ok)}${path}`);
       }
     }
 
@@ -436,6 +461,13 @@
     const btn = document.getElementById("btn_mute");
     btn.className = "btn " + (muted ? "primary" : "ghost");
     btn.textContent = muted ? "Unmute" : "Mute";
+  }
+
+  function setTvQrEnabled(enabled) {
+    const b = document.getElementById("btn_qr_toggle");
+    if (!b) return;
+    b.className = "btn " + (enabled ? "primary" : "ghost");
+    b.textContent = enabled ? "Hide TV QR" : "Show TV QR";
   }
 
   function updateNowCardFromState(state) {
@@ -623,6 +655,23 @@
       });
   }
 
+  function toggleTvQr() {
+    setStatus("");
+    const current = !!(STATE && STATE.tv_qr_enabled);
+    const next = !current;
+    if (!STATE) STATE = {};
+    STATE.tv_qr_enabled = next;
+    setTvQrEnabled(next);
+
+    post('/api/admin/tv_qr', {enabled: next})
+      .then(() => setStatus(next ? "TV QR enabled." : "TV QR disabled."))
+      .catch(e => {
+        STATE.tv_qr_enabled = !next;
+        setTvQrEnabled(!next);
+        setStatus('Error: ' + (e.message || 'unknown'));
+      });
+  }
+
   function skip() {
     setStatus("");
     post('/api/admin/skip', {})
@@ -752,6 +801,7 @@
         paused: !!j.paused,
         muted: !!j.muted,
         av_mode: (j.av_mode || "partybox").toLowerCase(),
+        tv_qr_enabled: !!(j.tv_qr_enabled ?? true),
         now: j.now || null
       };
 
@@ -759,6 +809,7 @@
       setTopMode(STATE.av_mode, STATE.paused);
       setMuted(STATE.muted);
       setPaused(STATE.paused, STATE.muted);
+      setTvQrEnabled(STATE.tv_qr_enabled);
       updateNowCardFromState({
         locked: STATE.locked,
         paused: STATE.paused,

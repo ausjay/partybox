@@ -7,3 +7,6 @@ partybox/__pycache__/
 *.mp4
 *.avi
 *.mkv
+*.db
+*.db-*
+data/backup/*.db.*

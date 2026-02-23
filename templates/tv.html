@@ -22,15 +22,19 @@
 
   <!-- Top-left status pills -->
   <div style="position: fixed; left: 16px; top: 16px; display:flex; gap:10px; align-items:center; z-index: 50;">
-    <img class="tvWordmark" src="/static/partybox_t.png" alt="PartyBox" />
     <div class="pill">
       <span id="tv_dot" class="dot warn"></span>
       <span id="mode_label">PartyBox</span>
     </div>
-    <div class="pill">
+    <div id="tv_now_pill" class="pill">
       <span class="muted">Now</span>
       <span id="now_label" class="ellip" style="max-width: 70vw;">—</span>
     </div>
+  </div>
+
+  <div id="tv_spotify_banner" class="tvSpotifyBanner hidden" aria-live="polite">
+    <span class="dot ok"></span>
+    <span>Spotify Mode Active • Video requests are disabled</span>
   </div>
 
   <!-- QR prompt surfaces -->
@@ -83,14 +87,14 @@
       dot.classList.remove("ok","warn","bad");
 
       // color rules
-      if (!tvOnline) dot.classList.add("bad");
-      else if ((avMode || "").toLowerCase() === "spotify") dot.classList.add("warn");
+      if ((avMode || "").toLowerCase() === "spotify") dot.classList.add("ok");
+      else if (!tvOnline) dot.classList.add("bad");
       else if (mode === "paused") dot.classList.add("warn");
       else dot.classList.add("ok");
 
       // label rules
       let label = "PartyBox";
-      if ((avMode || "").toLowerCase() === "spotify") label = "Spotify";
+      if ((avMode || "").toLowerCase() === "spotify") label = "Spotify Mode";
       else if (locked) label = "Locked";
       else if (mode === "paused") label = "Paused";
       else label = "PartyBox";
@@ -122,6 +126,8 @@
 
       const nowTitle = (now && now.title) ? now.title : "—";
       el("now_label").textContent = nowTitle;
+      el("tv_spotify_banner").classList.toggle("hidden", av !== "spotify");
+      el("tv_now_pill").style.display = (av === "spotify") ? "none" : "";
 
       setModePill(mode, tvOnline, av, locked);
 
@@ -131,7 +137,7 @@
       el("tv_qr_idle").classList.toggle("hidden", !idlePartybox);
 
       if (paused) {
-        const reason = STATE.now ? "Holding current selection" : "Admin paused playback";
+        const reason = STATE.now ? "PartyBox playback is paused. Resume to continue this selection." : "PartyBox playback is paused by Admin.";
         setPausedUi(true, reason);
         return;
       }

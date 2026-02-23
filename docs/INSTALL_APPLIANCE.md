@@ -343,7 +343,30 @@ Add to XFCE startup if needed.
 
 ---
 
-# 12. Appliance Behavior Rules
+# 12. Configure TV Autostart (Open `/tv` on Login)
+
+Install a kiosk startup entry so desktop login always opens the TV page:
+
+```bash
+cd /home/user/projects/partybox
+./tools/install_kiosk_autostart.sh partybox
+```
+
+Verify:
+
+```bash
+cat /home/partybox/.config/autostart/partybox-tv.desktop
+```
+
+If your preferred URL is `http://partybox.local/tv`, set:
+
+```bash
+PARTYBOX_TV_URL=http://partybox.local/tv ./tools/install_kiosk_autostart.sh partybox
+```
+
+---
+
+# 13. Appliance Behavior Rules
 
 HDMI display must ALWAYS show:
 
@@ -357,7 +380,7 @@ Never show terminal.
 
 ---
 
-# 13. Access Local Console
+# 14. Access Local Console
 
 If needed:
 
@@ -367,7 +390,7 @@ If needed:
 
 ---
 
-# 14. Service Debug Commands
+# 15. Service Debug Commands
 
 Check Flask:
 
@@ -397,7 +420,7 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ---
 
-# 15. Media Directory
+# 16. Media Directory
 
 Expected location:
 
@@ -413,9 +436,10 @@ curl -X POST http://127.0.0.1:5000/api/admin/media_scan?key=YOURKEY
 
 ---
 
-# 16. Appliance Checklist
+# 17. Appliance Checklist
 
 - [ ] Auto-login works
+- [ ] Desktop opens `/tv` automatically on login
 - [ ] HDMI always active
 - [ ] USB audio default
 - [ ] Flask reachable
