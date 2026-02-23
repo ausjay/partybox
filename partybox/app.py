@@ -18,6 +18,7 @@ from urllib.parse import urlparse
 from flask import Flask, abort, jsonify, redirect, render_template, request, send_from_directory, url_for
 
 from . import db as DB
+from .spotify_client import SpotifyClient
 
 YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,}$")
 HEALTH_CACHE: Dict[str, Any] = {"ts": 0.0, "status": 503, "payload": None}
@@ -558,6 +559,7 @@ def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
 
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="../static", template_folder="../templates")
+    spotify_client = SpotifyClient.from_env()
 
     DB.init_db()
     DB.seed_if_empty()
@@ -590,6 +592,9 @@ def create_app() -> Flask:
         """
         v = (DB.get_setting(name, default) or "").strip().lower()
         return v in ("1", "true", "yes", "y", "on")
+
+    def _spotify_snapshot() -> Dict[str, Any]:
+        return spotify_client.get_state(force=False)
 
     # ---------- Pages ----------
     @app.get("/")
@@ -666,6 +671,7 @@ def create_app() -> Flask:
         muted = _bool_setting("tv_muted", "0")
         av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
         tv_qr_enabled = _bool_setting("tv_qr_enabled", "1")
+        spotify = _spotify_snapshot()
 
         now = DB.get_now_playing()
         up = DB.peek_next()
@@ -688,6 +694,7 @@ def create_app() -> Flask:
                     "muted": muted,
                     "av_mode": av_mode,
                     "tv_qr_enabled": tv_qr_enabled,
+                    "spotify": spotify,
                     "mode": "paused",
                     "now": _pack(now) if now else (_pack(up) if up else None),
                     "up_next": _pack(up) if (now and up) else None,
@@ -703,6 +710,7 @@ def create_app() -> Flask:
                     "muted": muted,
                     "av_mode": av_mode,
                     "tv_qr_enabled": tv_qr_enabled,
+                    "spotify": spotify,
                     "mode": "playing",
                     "now": _pack(now),
                     "up_next": _pack(up) if up else None,
@@ -718,6 +726,7 @@ def create_app() -> Flask:
                     "muted": muted,
                     "av_mode": av_mode,
                     "tv_qr_enabled": tv_qr_enabled,
+                    "spotify": spotify,
                     "mode": "queue",
                     "now": _pack(up),
                     "up_next": None,
@@ -731,6 +740,7 @@ def create_app() -> Flask:
                 "muted": muted,
                 "av_mode": av_mode,
                 "tv_qr_enabled": tv_qr_enabled,
+                "spotify": spotify,
                 "mode": "empty",
                 "now": None,
                 "up_next": None,
@@ -854,9 +864,23 @@ def create_app() -> Flask:
     def api_tv_status():
         try:
             raw = DB.get_setting("tv_heartbeat_json") or ""
-            if not raw:
-                return jsonify({"ok": True, "status": None})
-            return jsonify({"ok": True, "status": json.loads(raw)})
+            hb_status = json.loads(raw) if raw else None
+            av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
+            paused = _bool_setting("tv_paused", "0")
+            muted = _bool_setting("tv_muted", "0")
+            spotify = _spotify_snapshot()
+            return jsonify(
+                {
+                    "ok": True,
+                    "status": hb_status,
+                    "state": {
+                        "av_mode": av_mode,
+                        "paused": paused,
+                        "muted": muted,
+                        "spotify": spotify,
+                    },
+                }
+            )
         except Exception as e:
             return jsonify({"ok": False, "error": str(e)}), 500
 

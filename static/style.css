@@ -689,6 +689,91 @@ p { margin: 0; }
   box-shadow: 0 10px 30px rgba(0,0,0,0.35);
 }
 
+.tvSpotifyPanel {
+  position: fixed;
+  right: 24px;
+  top: 112px;
+  z-index: 53;
+  width: min(36vw, 520px);
+  min-width: 420px;
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(10,15,25,0.65);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 0 40px rgba(0,0,0,0.45);
+}
+
+.tvSpotifyArt {
+  width: 108px;
+  height: 108px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(12,18,30,0.9);
+  flex: 0 0 auto;
+}
+
+.tvSpotifyMeta {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.tvSpotifyKicker {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(234,246,255,0.72);
+}
+
+.tvSpotifyTrack {
+  margin-top: 4px;
+  font-size: 26px;
+  line-height: 1.1;
+  font-weight: 800;
+  color: rgba(234,246,255,0.95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tvSpotifyArtist,
+.tvSpotifyAlbum {
+  margin-top: 5px;
+  font-size: 15px;
+  color: rgba(168,180,204,0.95);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tvSpotifyProgress {
+  margin-top: 10px;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.15);
+  overflow: hidden;
+}
+
+.tvSpotifyProgressFill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(90deg, rgba(0,212,255,0.95), rgba(255,45,175,0.95));
+}
+
+.tvSpotifyTimes {
+  margin-top: 6px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12px;
+  color: rgba(168,180,204,0.9);
+}
+
 .toast {
   position: fixed;
   left: 16px;

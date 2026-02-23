@@ -34,7 +34,24 @@
 
   <div id="tv_spotify_banner" class="tvSpotifyBanner hidden" aria-live="polite">
     <span class="dot ok"></span>
-    <span>Spotify Mode Active • Video requests are disabled</span>
+    <span id="tv_spotify_banner_text">Spotify Mode Active • Video requests are disabled</span>
+  </div>
+
+  <div id="tv_spotify_panel" class="tvSpotifyPanel hidden" aria-live="polite">
+    <img id="tv_spotify_art" class="tvSpotifyArt" alt="Album art" />
+    <div class="tvSpotifyMeta">
+      <div class="tvSpotifyKicker">Now Playing</div>
+      <div id="tv_spotify_track" class="tvSpotifyTrack">—</div>
+      <div id="tv_spotify_artist" class="tvSpotifyArtist">—</div>
+      <div id="tv_spotify_album" class="tvSpotifyAlbum">—</div>
+      <div class="tvSpotifyProgress">
+        <div id="tv_spotify_progress_fill" class="tvSpotifyProgressFill"></div>
+      </div>
+      <div class="tvSpotifyTimes">
+        <span id="tv_spotify_elapsed">0:00</span>
+        <span id="tv_spotify_total">0:00</span>
+      </div>
+    </div>
   </div>
 
   <!-- QR prompt surfaces -->
@@ -113,6 +130,59 @@
       document.body.classList.toggle("is-paused", !!show);
     }
 
+    function fmtMs(ms) {
+      const total = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+      const m = Math.floor(total / 60);
+      const s = total % 60;
+      return `${m}:${String(s).padStart(2, "0")}`;
+    }
+
+    function updateSpotifyUi(av) {
+      const banner = el("tv_spotify_banner");
+      const bannerText = el("tv_spotify_banner_text");
+      const panel = el("tv_spotify_panel");
+
+      const s = STATE && STATE.spotify ? STATE.spotify : null;
+      const onPartybox = !!(s && s.spotify_on_partybox);
+      const active = !!(s && s.ok && onPartybox && (s.state === "playing" || s.state === "paused"));
+
+      if (av !== "spotify") {
+        banner.classList.add("hidden");
+        panel.classList.add("hidden");
+        return;
+      }
+
+      const acct = s && s.account && s.account.display_name ? ` • Spotify Account: ${s.account.display_name}` : "";
+      if (active) {
+        bannerText.textContent = `Spotify Mode Active${acct}`;
+      } else {
+        const dev = (s && s.device && s.device.name) ? s.device.name : "configured device";
+        bannerText.textContent = `Spotify Mode Active • Waiting for playback on ${dev}${acct}`;
+      }
+      banner.classList.remove("hidden");
+      panel.classList.toggle("hidden", !active);
+      el("tv_now_pill").style.display = "none";
+
+      if (!active) return;
+
+      const track = s.track || {};
+      const images = s.images || {};
+      const art = images.large || images.medium || images.small || "";
+      const artists = Array.isArray(track.artists) ? track.artists.join(", ") : "";
+      const duration = Number(track.duration_ms) || 0;
+      const progress = Math.max(0, Math.min(Number(s.progress_ms) || 0, duration || Number(s.progress_ms) || 0));
+      const pct = duration > 0 ? (progress / duration) * 100 : 0;
+
+      el("tv_spotify_track").textContent = track.name || "Unknown track";
+      el("tv_spotify_artist").textContent = artists || "Unknown artist";
+      el("tv_spotify_album").textContent = track.album || "";
+      el("tv_spotify_art").src = art;
+      el("tv_spotify_art").style.visibility = art ? "visible" : "hidden";
+      el("tv_spotify_progress_fill").style.width = `${pct}%`;
+      el("tv_spotify_elapsed").textContent = fmtMs(progress);
+      el("tv_spotify_total").textContent = fmtMs(duration);
+    }
+
     function updateFromState(tvOnline) {
       if (!STATE) return;
       ensureQr();
@@ -126,8 +196,8 @@
 
       const nowTitle = (now && now.title) ? now.title : "—";
       el("now_label").textContent = nowTitle;
-      el("tv_spotify_banner").classList.toggle("hidden", av !== "spotify");
-      el("tv_now_pill").style.display = (av === "spotify") ? "none" : "";
+      updateSpotifyUi(av);
+      if (av !== "spotify") el("tv_now_pill").style.display = "";
 
       setModePill(mode, tvOnline, av, locked);
 

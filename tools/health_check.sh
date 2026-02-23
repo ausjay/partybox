@@ -12,6 +12,10 @@ fail() {
   failures=$((failures + 1))
 }
 
+warn() {
+  printf 'WARN %s\n' "$1"
+}
+
 check_service_active() {
   local svc="$1"
   local status
@@ -43,6 +47,48 @@ check_http_status() {
     ok "${label} (${url}) -> ${status}"
   else
     fail "${label} (${url}) expected ${expected}, got ${status}"
+  fi
+}
+
+check_tv_status_json() {
+  local url="http://127.0.0.1/api/tv/status"
+  local payload
+  if ! payload="$(curl -fsS "$url" 2>/dev/null)"; then
+    fail "tv status json fetch failed (${url})"
+    return
+  fi
+
+  if command -v jq >/dev/null 2>&1; then
+    if printf '%s' "$payload" | jq -e '.ok == true and has("status")' >/dev/null 2>&1; then
+      ok "tv status json sanity (${url})"
+    else
+      fail "tv status json sanity failed (${url})"
+      return
+    fi
+
+    local spotify_ok spotify_ts now age
+    spotify_ok="$(printf '%s' "$payload" | jq -r '.state.spotify.ok // empty')"
+    spotify_ts="$(printf '%s' "$payload" | jq -r '.state.spotify.ts // empty')"
+    now="$(date +%s)"
+    if [[ "$spotify_ok" == "true" && -n "$spotify_ts" && "$spotify_ts" =~ ^[0-9]+$ ]]; then
+      age=$((now - spotify_ts))
+      if [[ "$age" -gt 10 ]]; then
+        warn "spotify status is stale (${age}s old)"
+      else
+        ok "spotify status freshness (${age}s)"
+      fi
+    elif [[ -n "$spotify_ok" ]]; then
+      ok "spotify status present (not active)"
+    else
+      warn "spotify status not present in /api/tv/status (older API shape)"
+    fi
+  else
+    if printf '%s' "$payload" | grep -q '"ok":[[:space:]]*true'; then
+      ok "tv status json basic sanity (${url})"
+    else
+      fail "tv status json basic sanity failed (${url})"
+    fi
+    warn "jq not installed; skipped structured tv status checks"
   fi
 }
 
@@ -87,6 +133,7 @@ check_http_status "nginx /user redirect" "http://127.0.0.1/user" "302"
 check_http_status "nginx /admin?key=JBOX" "http://127.0.0.1/admin?key=JBOX" "200"
 
 check_http_status "flask direct /tv" "http://127.0.0.1:5000/tv" "200"
+check_tv_status_json
 if [[ "${PARTYBOX_HEALTH_CHECK_DESKTOP_AUTOSTART:-1}" == "1" ]]; then
   check_kiosk_autostart
 fi

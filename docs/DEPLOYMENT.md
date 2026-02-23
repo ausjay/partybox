@@ -33,6 +33,73 @@ Use `http://partybox.local/user` in QR codes/signage.
 - While paused, `/tv` applies a dim + subtle blur overlay to the background so status is clear but the center logo remains unobstructed.
 - The top-left TV header and idle QR prompt behavior are unchanged.
 
+## Spotify Now Playing (Connect via phone)
+
+PartyBox can display Spotify Now Playing metadata when playback is cast to the local librespot Connect device.
+
+### 1) Create Spotify app credentials
+
+1. Go to Spotify Developer Dashboard and create an app.
+2. Add a redirect URI (example used by helper): `http://127.0.0.1:8888/callback`
+3. Collect:
+   - `SPOTIFY_CLIENT_ID`
+   - `SPOTIFY_CLIENT_SECRET`
+
+### 2) Get a refresh token
+
+Use helper script:
+
+```bash
+./tools/spotify_auth.py \
+  --client-id YOUR_CLIENT_ID \
+  --client-secret YOUR_CLIENT_SECRET \
+  --redirect-uri http://127.0.0.1:8888/callback
+```
+
+Scope used: `user-read-playback-state user-read-currently-playing`
+
+Copy resulting:
+
+- `SPOTIFY_REFRESH_TOKEN`
+
+### 3) Configure partybox.service env vars
+
+Set these in `/etc/systemd/system/partybox.service` (or a referenced EnvironmentFile):
+
+```ini
+Environment=SPOTIFY_CLIENT_ID=...
+Environment=SPOTIFY_CLIENT_SECRET=...
+Environment=SPOTIFY_REFRESH_TOKEN=...
+Environment=SPOTIFY_DEVICE_NAME=UJ-PartyBox
+Environment=SPOTIFY_POLL_SECONDS=2
+```
+
+`SPOTIFY_DEVICE_NAME` must match librespot Connect name (for example librespot `--name UJ-PartyBox`).
+If Spotify is playing on another device, PartyBox reports Spotify as inactive for TV metadata display.
+
+Reload and restart:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart partybox.service
+```
+
+### 4) Verify API payload
+
+```bash
+curl -s http://127.0.0.1:5000/api/tv/status | jq '.state.spotify'
+```
+
+Expected keys include:
+
+- `ok`, `state`, `spotify_on_partybox`
+- `track.name`, `track.artists`, `track.album`
+- `progress_ms`, `track.duration_ms`
+- `images.small|medium|large`
+- `device.name`
+
+Note: PartyBox does not identify which phone/user is currently controlling Spotify playback. It only shows current playback metadata and optional authenticated Spotify account display name.
+
 ## nginx Configuration
 
 Edited file:
