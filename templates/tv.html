@@ -15,6 +15,7 @@
       <source src="/static/partybox_animated_background.mp4" type="video/mp4" />
     </video>
     <img class="tvCenterLogo" src="/static/partybox_t.png" alt="PartyBox" />
+    <img id="tv_mode_logo" class="tvModeLogo" src="/static/partybox_t.png" alt="PartyBox" />
     <div class="playerWrap">
       <div id="player"></div>
     </div>
@@ -143,8 +144,8 @@
       const panel = el("tv_spotify_panel");
 
       const s = STATE && STATE.spotify ? STATE.spotify : null;
-      const onPartybox = !!(s && s.spotify_on_partybox);
-      const active = !!(s && s.ok && onPartybox && (s.state === "playing" || s.state === "paused"));
+      const hasTrack = !!(s && s.track && s.track.name);
+      const active = !!(s && s.ok && ((s.state === "playing" || s.state === "paused") || hasTrack));
       const acctName = s && s.account && s.account.display_name ? s.account.display_name : "";
       const acct = acctName ? ` • Spotify Account: ${acctName}` : "";
 
@@ -158,12 +159,7 @@
 
       document.body.classList.add("spotify-mode");
       el("tv_top_pills").style.display = "none";
-      if (active) {
-        bannerText.textContent = `Spotify Mode Active${acct}`;
-      } else {
-        const dev = (s && s.device && s.device.name) ? s.device.name : "configured device";
-        bannerText.textContent = `Spotify Mode Active • Waiting for playback on ${dev}${acct}`;
-      }
+      bannerText.textContent = `Spotify Mode Active${acct}`;
       banner.classList.remove("hidden");
       panel.classList.toggle("hidden", !active);
 

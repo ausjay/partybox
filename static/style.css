@@ -528,7 +528,22 @@ p { margin: 0; }
 }
 
 .tvPage.spotify-mode .tvCenterLogo {
-  opacity: 0.75;
+  opacity: 0;
+}
+
+.tvModeLogo {
+  display: none;
+  position: fixed;
+  left: 16px;
+  top: 12px;
+  width: clamp(110px, 12vw, 170px);
+  height: auto;
+  z-index: 53;
+  filter: drop-shadow(0 10px 24px rgba(0,0,0,0.38));
+}
+
+.tvPage.spotify-mode .tvModeLogo {
+  display: block;
 }
 
 .tvPage .playerWrap {
@@ -682,7 +697,7 @@ p { margin: 0; }
 
 .tvSpotifyBanner {
   position: fixed;
-  left: 16px;
+  left: clamp(140px, 14vw, 208px);
   top: 16px;
   z-index: 52;
   display: inline-flex;
