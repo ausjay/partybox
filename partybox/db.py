@@ -83,6 +83,10 @@ def init_db() -> None:
             set_setting("requests_locked", "0")
         if get_setting("tv_paused", None) is None:
             set_setting("tv_paused", "0")
+        if get_setting("media_mode", None) is None:
+            legacy_av = (get_setting("av_mode", "partybox") or "partybox").strip().lower()
+            default_media_mode = "spotify" if legacy_av == "spotify" else "partybox"
+            set_setting("media_mode", default_media_mode)
 
         conn.commit()
 

@@ -659,6 +659,7 @@ def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
 def create_app() -> Flask:
     app = Flask(__name__, static_folder="../static", template_folder="../templates")
     spotify_client = SpotifyClient.from_env()
+    valid_media_modes = {"partybox", "spotify", "airplay", "bluetooth", "tv", "mute"}
 
     DB.init_db()
     DB.seed_if_empty()
@@ -668,6 +669,9 @@ def create_app() -> Flask:
         DB.set_setting("tv_muted", "0")
     if DB.get_setting("av_mode", None) is None:
         DB.set_setting("av_mode", "partybox")
+    if DB.get_setting("media_mode", None) is None:
+        legacy_av = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
+        DB.set_setting("media_mode", "spotify" if legacy_av == "spotify" else "partybox")
     if DB.get_setting("tv_qr_enabled", None) is None:
         DB.set_setting("tv_qr_enabled", "1")
 
@@ -691,6 +695,22 @@ def create_app() -> Flask:
         """
         v = (DB.get_setting(name, default) or "").strip().lower()
         return v in ("1", "true", "yes", "y", "on")
+
+    def _current_media_mode() -> str:
+        raw = (DB.get_setting("media_mode", "") or "").strip().lower()
+        if raw in valid_media_modes:
+            return raw
+        legacy_av = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
+        return "spotify" if legacy_av == "spotify" else "partybox"
+
+    def _persist_media_mode(mode: str) -> str:
+        normalized = (mode or "").strip().lower()
+        if normalized not in valid_media_modes:
+            raise ValueError(f"invalid media mode: {mode}")
+        DB.set_setting("media_mode", normalized)
+        # Keep legacy av_mode in sync for existing code paths during migration.
+        DB.set_setting("av_mode", "spotify" if normalized == "spotify" else "partybox")
+        return normalized
 
     def _spotify_snapshot(force: bool = False, allow_fetch: bool = True) -> Dict[str, Any]:
         return spotify_client.get_state(force=force, allow_fetch=allow_fetch)
@@ -794,7 +814,8 @@ def create_app() -> Flask:
         queue = DB.list_queue(limit=50)
         locked = (DB.get_setting("requests_locked", "0") or "0").strip().lower() in ("1", "true", "yes", "on")
         av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
-        return render_template("user.html", items=items, locked=locked, queue=queue, av_mode=av_mode)
+        media_mode = _current_media_mode()
+        return render_template("user.html", items=items, locked=locked, queue=queue, av_mode=av_mode, media_mode=media_mode)
 
     @app.get("/user")
     def user_public():
@@ -809,6 +830,7 @@ def create_app() -> Flask:
         paused = _bool_setting("tv_paused", "0")
         muted = _bool_setting("tv_muted", "0")
         av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
+        media_mode = _current_media_mode()
         tv_qr_enabled = _bool_setting("tv_qr_enabled", "1")
 
         return render_template(
@@ -820,6 +842,7 @@ def create_app() -> Flask:
             queue=q,
             key=key,
             av_mode=av_mode,
+            media_mode=media_mode,
             tv_qr_enabled=tv_qr_enabled,
         )
 
@@ -853,6 +876,7 @@ def create_app() -> Flask:
         paused = _bool_setting("tv_paused", "0")
         muted = _bool_setting("tv_muted", "0")
         av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
+        media_mode = _current_media_mode()
         tv_qr_enabled = _bool_setting("tv_qr_enabled", "1")
         key = (request.args.get("key", "") or "").strip()
         admin_key = (DB.get_setting("admin_key", "JBOX") or "JBOX").strip()
@@ -888,6 +912,7 @@ def create_app() -> Flask:
                     "paused": True,
                     "muted": muted,
                     "av_mode": av_mode,
+                    "media_mode": media_mode,
                     "tv_qr_enabled": tv_qr_enabled,
                     "spotify": spotify,
                     "mode": "paused",
@@ -904,6 +929,7 @@ def create_app() -> Flask:
                     "paused": False,
                     "muted": muted,
                     "av_mode": av_mode,
+                    "media_mode": media_mode,
                     "tv_qr_enabled": tv_qr_enabled,
                     "spotify": spotify,
                     "mode": "playing",
@@ -920,6 +946,7 @@ def create_app() -> Flask:
                     "paused": False,
                     "muted": muted,
                     "av_mode": av_mode,
+                    "media_mode": media_mode,
                     "tv_qr_enabled": tv_qr_enabled,
                     "spotify": spotify,
                     "mode": "queue",
@@ -934,6 +961,7 @@ def create_app() -> Flask:
                 "paused": False,
                 "muted": muted,
                 "av_mode": av_mode,
+                "media_mode": media_mode,
                 "tv_qr_enabled": tv_qr_enabled,
                 "spotify": spotify,
                 "mode": "empty",
@@ -1119,7 +1147,37 @@ def create_app() -> Flask:
             return jsonify({"ok": False, "error": f"audio-mode failed: {e}"}), 500
 
         DB.set_setting("av_mode", mode)
+        DB.set_setting("media_mode", "spotify" if mode == "spotify" else "partybox")
         return jsonify({"ok": True, "mode": mode})
+
+    @app.post("/api/admin/media_mode")
+    def api_admin_media_mode():
+        _admin_or_403()
+
+        data = request.get_json(force=True, silent=True) or {}
+        mode = (data.get("mode") or "").strip().lower()
+        if mode not in valid_media_modes:
+            return jsonify({"ok": False, "error": "bad mode"}), 400
+
+        try:
+            persisted = _persist_media_mode(mode)
+        except ValueError:
+            return jsonify({"ok": False, "error": "bad mode"}), 400
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+
+        return jsonify(
+            {
+                "ok": True,
+                "mode": persisted,
+                "status": {
+                    "mode": persisted,
+                    "services": {},
+                    "last_switch_ts": int(time.time()),
+                    "last_error": "",
+                },
+            }
+        )
 
     @app.get("/api/tv/status")
     def api_tv_status():
@@ -1127,6 +1185,7 @@ def create_app() -> Flask:
             raw = DB.get_setting("tv_heartbeat_json") or ""
             hb_status = json.loads(raw) if raw else None
             av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
+            media_mode = _current_media_mode()
             locked = _bool_setting("requests_locked", "0")
             paused = _bool_setting("tv_paused", "0")
             muted = _bool_setting("tv_muted", "0")
@@ -1174,6 +1233,7 @@ def create_app() -> Flask:
                     "state": {
                         "locked": locked,
                         "av_mode": av_mode,
+                        "media_mode": media_mode,
                         "paused": paused,
                         "muted": muted,
                         "tv_qr_enabled": tv_qr_enabled,
