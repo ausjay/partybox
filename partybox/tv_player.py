@@ -7,7 +7,7 @@
 # - Marks queue items playing/done via /api/tv/mark_playing and /api/tv/mark_done
 #
 # RULES:
-# - If av_mode=spotify -> do nothing (leave HDMI alone; Spotify Connect only)
+# - If media_mode!=partybox -> do nothing (leave HDMI audio to selected input mode)
 # - If paused=true     -> do nothing (TV status page can show PAUSED)
 # - Only queue items get mark_playing/mark_done.
 # - If paused/spotify flips ON while mpv is running -> stop mpv.
@@ -148,9 +148,12 @@ def youtube_or_url(youtube_id: str) -> str:
 
 
 def pick_item_from_state(state: Dict[str, Any]) -> Tuple[Optional[str], Optional[int], Optional[str], str]:
-    av_mode = (state.get("av_mode") or "partybox").lower()
-    if av_mode == "spotify":
-        return (None, None, None, "spotify")
+    media_mode = (state.get("media_mode") or "").lower()
+    if not media_mode:
+        av_mode = (state.get("av_mode") or "partybox").lower()
+        media_mode = "spotify" if av_mode == "spotify" else "partybox"
+    if media_mode != "partybox":
+        return (None, None, None, media_mode)
 
     if bool(state.get("paused", False)):
         return (None, None, None, "paused")
@@ -245,7 +248,10 @@ def main() -> None:
                 # queue item (skip/remove/clear/promote effects).
                 try:
                     s2 = get_state()
-                    paused_or_spotify = bool(s2.get("paused", False)) or (str(s2.get("av_mode") or "").lower() == "spotify")
+                    s2_media_mode = str(s2.get("media_mode") or "").lower()
+                    if not s2_media_mode:
+                        s2_media_mode = "spotify" if str(s2.get("av_mode") or "").lower() == "spotify" else "partybox"
+                    paused_or_spotify = bool(s2.get("paused", False)) or (s2_media_mode != "partybox")
 
                     state_now = s2.get("now") or None
                     state_qid: Optional[int] = None
@@ -307,7 +313,10 @@ def main() -> None:
 
             if mode != last_mode:
                 last_mode = mode
-                log(f"[tv_player] state: mode={mode} av_mode={state.get('av_mode')} paused={state.get('paused')}")
+                log(
+                    f"[tv_player] state: mode={mode} media_mode={state.get('media_mode')} "
+                    f"av_mode={state.get('av_mode')} paused={state.get('paused')}"
+                )
 
             if not youtube_id:
                 pending_key = None
