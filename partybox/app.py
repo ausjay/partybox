@@ -469,19 +469,21 @@ def _http_status_no_redirect(
 def _nginx_http_check() -> Dict[str, Any]:
     admin_key = DB.get_setting("admin_key", "JBOX")
     endpoint_specs = {
-        "http_to_https_root": {
+        "http_root_redirect": {
             "url": "http://partybox.local/",
-            "expected": (301, 302),
-            "location_prefix": "https://",
-            "insecure_tls": False,
+            "expected": (302,),
+            "location_prefix": "/user",
         },
-        "https_tv": {"url": "https://127.0.0.1/tv", "expected": (200,), "insecure_tls": True},
-        "https_u": {"url": "https://127.0.0.1/u", "expected": (200,), "insecure_tls": True},
-        "https_user_redirect": {"url": "https://127.0.0.1/user", "expected": (302,), "insecure_tls": True},
-        "https_admin": {
-            "url": f"https://127.0.0.1/admin?key={urllib.parse.quote(admin_key)}",
+        "http_user_redirect": {
+            "url": "http://partybox.local/user",
+            "expected": (302,),
+            "location_prefix": "/u",
+        },
+        "http_tv": {"url": "http://partybox.local/tv", "expected": (200,)},
+        "http_u": {"url": "http://partybox.local/u", "expected": (200,)},
+        "http_admin": {
+            "url": f"http://partybox.local/admin?key={urllib.parse.quote(admin_key)}",
             "expected": (200,),
-            "insecure_tls": True,
         },
     }
 
@@ -496,7 +498,9 @@ def _nginx_http_check() -> Dict[str, Any]:
         status, err, location = _http_status_no_redirect(url, insecure_tls=insecure)
         ok = status in expected
         if ok and location_prefix:
-            ok = location.startswith(location_prefix)
+            parsed_location = urllib.parse.urlparse(location or "")
+            location_path = str(parsed_location.path or "")
+            ok = location.startswith(location_prefix) or location_path.startswith(location_prefix)
         if not ok:
             all_ok = False
         result: Dict[str, Any] = {
@@ -551,6 +555,16 @@ def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
         c = _service_check(unit, expected_user=expected_user)
         service_checks[unit] = c
 
+    # librespot is only required while Spotify backend is active.
+    # In PartyBox mode, keep it visible in diagnostics but optional by default.
+    require_librespot = os.getenv("PARTYBOX_HEALTH_REQUIRE_LIBRESPOT_SERVICE", "0") == "1"
+    librespot_check = service_checks.get("librespot.service")
+    if isinstance(librespot_check, dict) and av_mode != "spotify" and not require_librespot:
+        librespot_check["optional"] = True
+        librespot_check["n_a"] = True
+        librespot_check["ok"] = True
+        librespot_check["note"] = "n/a while PartyBox backend is active"
+
     require_player = os.getenv("PARTYBOX_HEALTH_REQUIRE_PLAYER_SERVICE", "0") == "1"
     player_expected_user = (
         os.getenv("PARTYBOX_PLAYER_SERVICE_USER", "partybox").strip() if require_player else None
@@ -588,6 +602,8 @@ def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
         hb["n_a"] = True
         hb["ok"] = True
         hb["note"] = "n/a while Spotify backend is active"
+    checks["tv_player_heartbeat"] = hb
+    # Legacy alias for older clients/scripts.
     checks["tv_heartbeat"] = hb
     ok = ok and bool(hb.get("ok"))
 
@@ -615,6 +631,9 @@ def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
     failed: list[str] = []
     for name, result in checks.items():
         result = result or {}
+        if name == "tv_heartbeat":
+            # Legacy alias; do not count separately in failed summary.
+            continue
         if name == "services":
             units = result.get("units") if isinstance(result.get("units"), dict) else {}
             for unit_name, unit_result in units.items():
@@ -673,8 +692,8 @@ def create_app() -> Flask:
         v = (DB.get_setting(name, default) or "").strip().lower()
         return v in ("1", "true", "yes", "y", "on")
 
-    def _spotify_snapshot() -> Dict[str, Any]:
-        return spotify_client.get_state(force=False)
+    def _spotify_snapshot(force: bool = False, allow_fetch: bool = True) -> Dict[str, Any]:
+        return spotify_client.get_state(force=force, allow_fetch=allow_fetch)
 
     def _spotify_oauth_scope() -> str:
         return os.getenv("SPOTIFY_SCOPE", "user-read-playback-state user-read-currently-playing").strip()
@@ -835,7 +854,19 @@ def create_app() -> Flask:
         muted = _bool_setting("tv_muted", "0")
         av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
         tv_qr_enabled = _bool_setting("tv_qr_enabled", "1")
-        spotify = _spotify_snapshot()
+        key = (request.args.get("key", "") or "").strip()
+        admin_key = (DB.get_setting("admin_key", "JBOX") or "JBOX").strip()
+        is_admin = bool(key and key == admin_key)
+        refresh_spotify = (request.args.get("spotify_refresh", "0") or "").strip() in ("1", "true", "yes", "on")
+        force_spotify = bool(is_admin and refresh_spotify)
+
+        if av_mode == "spotify" or force_spotify:
+            spotify = _spotify_snapshot(force=force_spotify, allow_fetch=True)
+        else:
+            spotify = _spotify_snapshot(force=False, allow_fetch=False)
+            spotify["state"] = "disabled"
+            spotify["ok"] = True
+            spotify["error"] = ""
 
         now = DB.get_now_playing()
         up = DB.peek_next()
@@ -919,7 +950,7 @@ def create_app() -> Flask:
     @app.post("/api/tv/heartbeat")
     def api_tv_heartbeat():
         """
-        TV agent heartbeat (tv_player.py and/or /tv page can call this)
+        TV player agent heartbeat (posted by tv_player.py)
         Stores last seen + basic info for admin UI.
         """
         try:
@@ -1096,17 +1127,59 @@ def create_app() -> Flask:
             raw = DB.get_setting("tv_heartbeat_json") or ""
             hb_status = json.loads(raw) if raw else None
             av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
+            locked = _bool_setting("requests_locked", "0")
             paused = _bool_setting("tv_paused", "0")
             muted = _bool_setting("tv_muted", "0")
-            spotify = _spotify_snapshot()
+            tv_qr_enabled = _bool_setting("tv_qr_enabled", "1")
+
+            # In Spotify mode, allow cached/live refreshes via SpotifyClient cache policy.
+            spotify = _spotify_snapshot(force=False, allow_fetch=(av_mode == "spotify"))
+            if av_mode != "spotify":
+                spotify["state"] = "disabled"
+                spotify["ok"] = True
+                spotify["error"] = ""
+
+            now = DB.get_now_playing()
+            up = DB.peek_next()
+
+            def _pack(qrow: Dict[str, Any]) -> Dict[str, Any]:
+                return {
+                    "queue_id": int(qrow["id"]),
+                    "title": qrow["title"],
+                    "youtube_id": qrow["youtube_id"],
+                    "note_text": qrow.get("note_text") or "",
+                }
+
+            if paused:
+                mode = "paused"
+                now_out = _pack(now) if now else (_pack(up) if up else None)
+                up_out = _pack(up) if (now and up) else None
+            elif now:
+                mode = "playing"
+                now_out = _pack(now)
+                up_out = _pack(up) if up else None
+            elif up:
+                mode = "queue"
+                now_out = _pack(up)
+                up_out = None
+            else:
+                mode = "empty"
+                now_out = None
+                up_out = None
+
             return jsonify(
                 {
                     "ok": True,
                     "status": hb_status,
                     "state": {
+                        "locked": locked,
                         "av_mode": av_mode,
                         "paused": paused,
                         "muted": muted,
+                        "tv_qr_enabled": tv_qr_enabled,
+                        "mode": mode,
+                        "now": now_out,
+                        "up_next": up_out,
                         "spotify": spotify,
                     },
                 }

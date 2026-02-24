@@ -52,18 +52,20 @@ check_http_status() {
   fi
 }
 
-check_http_redirect_https() {
+check_http_redirect() {
   local label="$1"
   local url="$2"
-  local status location
+  local expected_location_prefix="$3"
+  local status location location_path
 
   status="$(curl -fsS -I "$url" 2>/dev/null | awk 'NR==1 {print $2}')"
   location="$(curl -fsS -I "$url" 2>/dev/null | awk 'BEGIN{IGNORECASE=1} /^Location:/ {print $2; exit}' | tr -d '\r')"
+  location_path="$(printf '%s' "$location" | sed -E 's#^[a-zA-Z]+://[^/]+##')"
 
-  if [[ "$status" =~ ^(301|302)$ ]] && [[ "$location" =~ ^https:// ]]; then
+  if [[ "$status" =~ ^(301|302)$ ]] && { [[ "$location" =~ ^${expected_location_prefix} ]] || [[ "$location_path" =~ ^${expected_location_prefix} ]]; }; then
     ok "${label} (${url}) -> ${status}, ${location}"
   else
-    fail "${label} (${url}) expected 301/302 + https:// location, got status=${status:-none}, location=${location:-none}"
+    fail "${label} (${url}) expected 301/302 + ${expected_location_prefix}, got status=${status:-none}, location=${location:-none}"
   fi
 }
 
@@ -144,11 +146,11 @@ echo "PartyBox health check"
 check_service_active nginx
 check_service_active partybox
 
-check_http_redirect_https "nginx http->https root redirect" "http://partybox.local/"
-check_http_status "nginx https /tv" "https://127.0.0.1/tv" "200" "-k"
-check_http_status "nginx https /u" "https://127.0.0.1/u" "200" "-k"
-check_http_status "nginx https /user redirect" "https://127.0.0.1/user" "302" "-k"
-check_http_status "nginx https /admin?key=JBOX" "https://127.0.0.1/admin?key=JBOX" "200" "-k"
+check_http_redirect "nginx http / -> /user redirect" "http://partybox.local/" "/user"
+check_http_redirect "nginx http /user -> /u redirect" "http://partybox.local/user" "/u"
+check_http_status "nginx http /tv" "http://partybox.local/tv" "200"
+check_http_status "nginx http /u" "http://partybox.local/u" "200"
+check_http_status "nginx http /admin?key=JBOX" "http://partybox.local/admin?key=JBOX" "200"
 
 check_http_status "flask direct /tv" "http://127.0.0.1:5000/tv" "200"
 check_tv_status_json

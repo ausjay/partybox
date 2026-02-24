@@ -665,6 +665,7 @@ p { margin: 0; }
 }
 
 .tvQrCode {
+  position: relative;
   width: 220px;
   height: 220px;
   background: #fff;
@@ -682,6 +683,21 @@ p { margin: 0; }
   width: 100% !important;
   height: 100% !important;
   display: block;
+}
+
+.tvQrCode .tvQrCenterLogo {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px !important;
+  height: 48px !important;
+  transform: translate(-50%, -50%);
+  border-radius: 12px;
+  background: #fff;
+  padding: 6px;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.28);
+  z-index: 2;
 }
 
 .tvQrIdle {

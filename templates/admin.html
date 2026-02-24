@@ -150,18 +150,24 @@
         </div>
 
         <div class="panelInner">
-          {% set queue_only = queue|selectattr("status","equalto","queued")|list %}
-          <div id="queue_empty_card" class="card" style="{% if queue_only|length == 0 %}display:block;{% else %}display:none;{% endif %}">
+          <div id="queue_empty_card" class="card" style="{% if queue|length == 0 %}display:block;{% else %}display:none;{% endif %}">
             <div class="title">Queue is empty</div>
             <div class="sub">Add items or allow users to request.</div>
           </div>
 
-          <div id="queue_list" class="list" style="{% if queue_only|length == 0 %}display:none;{% else %}display:flex; flex-direction:column; gap:10px;{% endif %}">
-            {% for q in queue_only %}
+          <div id="queue_list" class="list" style="{% if queue|length == 0 %}display:none;{% else %}display:flex; flex-direction:column; gap:10px;{% endif %}">
+            {% set ns = namespace(n=0) %}
+            {% for q in queue %}
               <div class="listrow" data-queue-id="{{ q.id }}">
                 <div class="grow">
                   <div class="title ellip">
-                    {{ loop.index }}. {{ q.title }}
+                    {% if q.status == 'playing' %}
+                      Next. {{ q.title }}
+                      <span class="badge playing" style="margin-left:10px;">playing</span>
+                    {% else %}
+                      {% set ns.n = ns.n + 1 %}
+                      {{ ns.n }}. {{ q.title }}
+                    {% endif %}
                   </div>
 
                   <div class="sub ellip">
@@ -174,7 +180,9 @@
                   </div>
                 </div>
 
-                <button class="btn small ghost" onclick="promote({{ q.id }})">Promote</button>
+                {% if q.status == "queued" %}
+                  <button class="btn small ghost" onclick="promote({{ q.id }})">Promote</button>
+                {% endif %}
                 <button class="btn small danger" onclick="removeFromQueue({{ q.id }})">Remove</button>
               </div>
             {% endfor %}
@@ -372,11 +380,11 @@
       });
     }
 
-    const hb = checks.tv_heartbeat || {};
+    const hb = checks.tv_player_heartbeat || checks.tv_heartbeat || {};
     if (Object.keys(hb).length) {
       const age = Number(hb.age_seconds || 0);
       const max = Number(hb.max_age_seconds || 0);
-      lines.push(`TV heartbeat: ${yn(!!hb.ok)} (age ${age}s, max ${max}s)`);
+      lines.push(`TV player heartbeat: ${yn(!!hb.ok)} (age ${age}s, max ${max}s)`);
     }
 
     const internet = checks.internet || {};
@@ -474,12 +482,58 @@
   }
 
   function updateNowCardFromState(state) {
-    // This uses /api/state "now" which is stable across tv/user/admin
+    // This uses /api/state for PartyBox queue and Spotify metadata.
     const now = state.now;
+    const spotify = state.spotify || {};
+    const avMode = (state.av_mode || "partybox").toLowerCase();
 
     const titleEl = document.getElementById("now_title");
     const subEl = document.getElementById("now_sub");
     const kvEl = document.getElementById("now_kv");
+    if (!document.getElementById("kv_playback")) {
+      kvEl.innerHTML = `
+        <div class="k">Playback</div>
+        <div class="v" id="kv_playback">—</div>
+        <div class="k">Requests</div>
+        <div class="v" id="kv_requests">—</div>
+        <div class="k">A/V Mode</div>
+        <div class="v" id="kv_av">—</div>
+      `;
+    }
+    const kvPlayback = document.getElementById("kv_playback");
+    const kvRequests = document.getElementById("kv_requests");
+    const kvAv = document.getElementById("kv_av");
+
+    if (avMode === "spotify") {
+      const track = spotify.track || {};
+      const title = (track.name || "").trim();
+      const artists = Array.isArray(track.artists) ? track.artists.filter(Boolean).join(", ") : "";
+      const album = (track.album || "").trim();
+      const deviceName = (((spotify.device || {}).name) || "").trim();
+      const accountName = ((((spotify.account || {}).display_name) || "").trim());
+      const err = (spotify.error || "").toString().trim();
+      const playbackState = String(spotify.state || "").toLowerCase();
+
+      titleEl.textContent = title || "Spotify mode active";
+
+      const parts = [];
+      if (artists) parts.push(artists);
+      if (album) parts.push(album);
+      if (deviceName) parts.push(`Device: ${deviceName}`);
+      if (accountName) parts.push(`Account: ${accountName}`);
+      if (err) parts.push(`Spotify API: ${err}`);
+      subEl.textContent = parts.length
+        ? parts.join(" • ")
+        : "Waiting for Spotify playback metadata.";
+
+      kvEl.style.display = "grid";
+      kvPlayback.textContent = (playbackState === "playing" || playbackState === "paused")
+        ? (playbackState[0].toUpperCase() + playbackState.slice(1))
+        : "Spotify active";
+      kvRequests.textContent = state.locked ? "Locked" : "Open";
+      kvAv.textContent = "Spotify";
+      return;
+    }
 
     if (!now) {
       titleEl.textContent = "Nothing playing / queued";
@@ -496,9 +550,6 @@
     subEl.textContent = note ? (pretty + " • Note: " + note) : pretty;
 
     kvEl.style.display = "grid";
-    const kvPlayback = document.getElementById("kv_playback");
-    const kvRequests = document.getElementById("kv_requests");
-    const kvAv = document.getElementById("kv_av");
 
     kvPlayback.textContent = (state.paused ? "Paused" : "Playing") + (state.muted ? " • Muted" : "");
     kvRequests.textContent = state.locked ? "Locked" : "Open";
@@ -510,7 +561,10 @@
     const empty = document.getElementById("queue_empty_card");
     const cnt = document.getElementById("queue_count");
 
-    items = (items || []).filter(q => q.status !== "playing");
+    items = Array.isArray(items) ? items : [];
+    const playing = items.filter(q => String(q.status || "").toLowerCase() === "playing");
+    const queued = items.filter(q => String(q.status || "").toLowerCase() !== "playing");
+    items = [...playing, ...queued];
     cnt.textContent = String(items.length);
 
     if (!items.length) {
@@ -524,7 +578,8 @@
     list.style.display = "flex";
     list.innerHTML = "";
 
-    items.forEach((q, idx) => {
+    let queueOrdinal = 1;
+    items.forEach((q) => {
       const row = document.createElement("div");
       row.className = "listrow" + (q.status === "playing" ? " playing" : "");
       row.dataset.queueId = q.id;
@@ -536,14 +591,15 @@
       t.className = "title ellip";
 
       if (q.status === "playing") {
-        t.textContent = "▶ " + (q.title || "(untitled)");
+        t.textContent = "Next. " + (q.title || "(untitled)");
         const badge = document.createElement("span");
         badge.className = "badge playing";
         badge.style.marginLeft = "10px";
         badge.textContent = "playing";
         t.appendChild(badge);
       } else {
-        t.textContent = `${idx + 1}. ${q.title || "(untitled)"}`;
+        t.textContent = `${queueOrdinal}. ${q.title || "(untitled)"}`;
+        queueOrdinal += 1;
       }
 
       const sub = document.createElement("div");
@@ -805,7 +861,8 @@
         muted: !!j.muted,
         av_mode: (j.av_mode || "partybox").toLowerCase(),
         tv_qr_enabled: !!(j.tv_qr_enabled ?? true),
-        now: j.now || null
+        now: j.now || null,
+        spotify: j.spotify || null
       };
 
       setTopLock(STATE.locked);
@@ -818,7 +875,8 @@
         paused: STATE.paused,
         muted: STATE.muted,
         av_mode: STATE.av_mode,
-        now: STATE.now
+        now: STATE.now,
+        spotify: STATE.spotify
       });
 
     } catch (e) {
@@ -845,7 +903,7 @@
   pollHealth();
 
   // keep it live
-  setInterval(pollState, 1000);
+  setInterval(pollState, 30000);
   setInterval(pollQueue, 1200);
   setInterval(pollHealth, 5000);
 </script>
