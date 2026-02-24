@@ -960,6 +960,19 @@
     }
   }
 
+  async function pollMediaModeStatus() {
+    try {
+      const r = await fetch(`/api/admin/media_mode_status?key=${encodeURIComponent(KEY)}`, { cache: "no-store" });
+      const j = await r.json();
+      if (!j || !j.ok) return;
+      if (!STATE) STATE = {};
+      STATE.media_mode_status = j.status || null;
+      renderMediaModeStatus(STATE.media_mode_status);
+    } catch (e) {
+      // ignore transient
+    }
+  }
+
   async function pollHealth() {
     try {
       const r = await fetch(`/api/admin/health?key=${encodeURIComponent(KEY)}`, { cache: "no-store" });
@@ -977,10 +990,12 @@
   pollState();
   pollQueue();
   pollHealth();
+  pollMediaModeStatus();
 
   // keep it live
   setInterval(pollState, 30000);
   setInterval(pollQueue, 1200);
   setInterval(pollHealth, 5000);
+  setInterval(pollMediaModeStatus, 5000);
 </script>
 {% endblock %}

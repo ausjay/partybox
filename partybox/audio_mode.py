@@ -100,7 +100,7 @@ class AudioModeManager:
             "raw": result,
         }
 
-    def _bluetoothctl_single(self, *args: str, timeout: float = 8.0) -> Dict[str, Any]:
+    def _bluetoothctl_single(self, *args: str, timeout: float = 2.5) -> Dict[str, Any]:
         cmd = [self._sudo_bin, "-n", "bluetoothctl", *[a for a in args if a]]
         return self._run(cmd, timeout=timeout)
 
@@ -129,8 +129,12 @@ class AudioModeManager:
             return "yes" in txt2.lower()
         return None
 
-    def _bluetooth_connected_devices(self) -> List[str]:
-        result = self._bluetoothctl_single("devices", "Connected", timeout=6.0)
+    def _bluetooth_connected_devices(self, mode: str) -> List[str]:
+        always_query = os.getenv("PARTYBOX_MEDIA_MODE_ALWAYS_QUERY_BT_STATUS", "0") == "1"
+        if mode != "bluetooth" and not always_query:
+            return []
+
+        result = self._bluetoothctl_single("devices", "Connected", timeout=1.5)
         if not result.get("ok"):
             return []
         out = str(result.get("stdout") or "")
@@ -251,23 +255,24 @@ class AudioModeManager:
         ):
             return dict(self._status_cache)
 
+        mode = self._current_mode()
         last_actions_raw = DB.get_setting(SETTING_LAST_ACTIONS, "") or ""
         try:
             last_actions = json.loads(last_actions_raw) if last_actions_raw else []
         except Exception:
             last_actions = []
         payload = {
-            "mode": self._current_mode(),
+            "mode": mode,
             "valid_modes": list(VALID_MEDIA_MODES),
             "last_switch_ts": int((DB.get_setting(SETTING_LAST_SWITCH_TS, "0") or "0").strip() or "0"),
             "last_error": (DB.get_setting(SETTING_LAST_ERROR, "") or "").strip(),
             "services": self._service_states(),
             "audio_muted": self._audio_muted(),
-            "bluetooth_connected_devices": self._bluetooth_connected_devices(),
+            "bluetooth_connected_devices": self._bluetooth_connected_devices(mode),
             "last_actions": last_actions[-20:] if isinstance(last_actions, list) else [],
         }
         self._status_cache = dict(payload)
-        self._status_cache_ts = now
+        self._status_cache_ts = time.time()
         return payload
 
     def make_bluetooth_discoverable(self, seconds: int = 300) -> Dict[str, Any]:

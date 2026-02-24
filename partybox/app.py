@@ -753,6 +753,13 @@ def create_app() -> Flask:
 
         return _spotify_inactive_payload("Spotify connected elsewhere.")
 
+    def _media_mode_status_compact() -> Dict[str, Any]:
+        return {
+            "mode": _current_media_mode(),
+            "last_switch_ts": int((DB.get_setting("media_mode_last_switch_ts", "0") or "0").strip() or "0"),
+            "last_error": (DB.get_setting("media_mode_last_error", "") or "").strip(),
+        }
+
     def _spotify_oauth_scope() -> str:
         return os.getenv("SPOTIFY_SCOPE", "user-read-playback-state user-read-currently-playing").strip()
 
@@ -967,7 +974,7 @@ def create_app() -> Flask:
         spotify = _spotify_snapshot(force=force_spotify, allow_fetch=(media_mode == "spotify" or force_spotify))
         spotify = _spotify_payload_for_ui(media_mode, spotify)
 
-        mode_status = audio_mode_mgr.get_media_mode_status()
+        mode_status = _media_mode_status_compact()
 
         now = DB.get_now_playing()
         up = DB.peek_next()
@@ -1268,7 +1275,7 @@ def create_app() -> Flask:
             # In Spotify mode, allow cached/live refreshes via SpotifyClient cache policy.
             spotify = _spotify_snapshot(force=False, allow_fetch=(media_mode == "spotify"))
             spotify = _spotify_payload_for_ui(media_mode, spotify)
-            mode_status = audio_mode_mgr.get_media_mode_status()
+            mode_status = _media_mode_status_compact()
 
             now = DB.get_now_playing()
             up = DB.peek_next()
