@@ -711,6 +711,48 @@ def create_app() -> Flask:
     def _spotify_snapshot(force: bool = False, allow_fetch: bool = True) -> Dict[str, Any]:
         return spotify_client.get_state(force=force, allow_fetch=allow_fetch)
 
+    def _spotify_inactive_payload(note: str = "Spotify connected elsewhere.") -> Dict[str, Any]:
+        return {
+            "ok": True,
+            "state": "inactive",
+            "spotify_on_partybox": False,
+            "device": {"name": "", "id": "", "volume_percent": 0},
+            "track": {"name": "", "artists": [], "album": "", "duration_ms": 0, "id": ""},
+            "progress_ms": 0,
+            "images": {"small": "", "medium": "", "large": ""},
+            "shuffle_state": False,
+            "repeat_state": "off",
+            "error": "",
+            "note": note,
+            "ts": int(time.time()),
+        }
+
+    def _spotify_payload_for_ui(media_mode: str, spotify: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Guard against stale/confusing Spotify display:
+        - Always allow full Spotify payload while in spotify media mode.
+        - Outside spotify mode, only expose now-playing if payload is OK and device matches PartyBox.
+        """
+        mode = (media_mode or "").strip().lower()
+        payload = dict(spotify or {})
+
+        if mode == "spotify":
+            return payload
+
+        if not bool(payload.get("ok")):
+            return _spotify_inactive_payload("Spotify connected elsewhere.")
+
+        expected_device_id = (spotify_client.device_id or os.getenv("SPOTIFY_DEVICE_ID", "")).strip()
+        device = payload.get("device") if isinstance(payload.get("device"), dict) else {}
+        actual_device_id = str(device.get("id") or "").strip()
+        on_partybox = bool(payload.get("spotify_on_partybox"))
+        device_match = bool(expected_device_id and actual_device_id and actual_device_id == expected_device_id)
+
+        if device_match or (not expected_device_id and on_partybox):
+            return payload
+
+        return _spotify_inactive_payload("Spotify connected elsewhere.")
+
     def _spotify_oauth_scope() -> str:
         return os.getenv("SPOTIFY_SCOPE", "user-read-playback-state user-read-currently-playing").strip()
 
@@ -922,13 +964,8 @@ def create_app() -> Flask:
         refresh_spotify = (request.args.get("spotify_refresh", "0") or "").strip() in ("1", "true", "yes", "on")
         force_spotify = bool(is_admin and refresh_spotify)
 
-        if media_mode == "spotify" or force_spotify:
-            spotify = _spotify_snapshot(force=force_spotify, allow_fetch=True)
-        else:
-            spotify = _spotify_snapshot(force=False, allow_fetch=False)
-            spotify["state"] = "disabled"
-            spotify["ok"] = True
-            spotify["error"] = ""
+        spotify = _spotify_snapshot(force=force_spotify, allow_fetch=(media_mode == "spotify" or force_spotify))
+        spotify = _spotify_payload_for_ui(media_mode, spotify)
 
         mode_status = audio_mode_mgr.get_media_mode_status()
 
@@ -1230,10 +1267,7 @@ def create_app() -> Flask:
 
             # In Spotify mode, allow cached/live refreshes via SpotifyClient cache policy.
             spotify = _spotify_snapshot(force=False, allow_fetch=(media_mode == "spotify"))
-            if media_mode != "spotify":
-                spotify["state"] = "disabled"
-                spotify["ok"] = True
-                spotify["error"] = ""
+            spotify = _spotify_payload_for_ui(media_mode, spotify)
             mode_status = audio_mode_mgr.get_media_mode_status()
 
             now = DB.get_now_playing()

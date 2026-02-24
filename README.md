@@ -62,6 +62,7 @@ No HTTPS is required in current deployment.
 
 - Deployment and nginx contract: `docs/DEPLOYMENT.md`
 - Appliance build/install (Ubuntu/desktop/services): `docs/INSTALL_APPLIANCE.md`
+- Audio mode switching (PartyBox/Spotify/AirPlay/Bluetooth/TV/Mute): `docs/audio_modes.md`
 - Quick install/run notes: `INSTALL.md`
 - UI styling notes: `docs/design-system.md`
 

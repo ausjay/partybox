@@ -25,6 +25,31 @@ Mode state is persisted in DB setting `media_mode`, with diagnostics in:
 - `media_mode_last_error`
 - `media_mode_last_actions_json`
 
+Switch behavior by target mode:
+
+- `partybox`: stops AirPlay/Bluetooth/librespot mode services, unmutes sink, resumes PartyBox playback (`tv_paused=0`).
+- `spotify`: pauses PartyBox playback, stops AirPlay/Bluetooth services, starts `librespot.service`.
+- `airplay`: pauses PartyBox playback, stops librespot and Bluetooth helper service, starts `partybox-airplay.service`.
+- `bluetooth`: pauses PartyBox playback, stops librespot and AirPlay service, starts Bluetooth helper service.
+- `tv`: pauses PartyBox playback, stops AirPlay/Bluetooth/librespot services, leaves TV channel audio path available.
+- `mute`: stops all managed mode services and mutes default audio sink.
+
+## Service Files
+
+Repo templates:
+
+- `deploy/systemd/partybox-airplay.service`
+- `deploy/systemd/partybox-bluetooth.service`
+- `deploy/config/shairport-sync.conf`
+- `deploy/bin/partybox-bluetooth-helper.sh`
+
+Host install targets:
+
+- `/etc/systemd/system/partybox-airplay.service`
+- `/etc/systemd/system/partybox-bluetooth.service`
+- `/etc/partybox/shairport-sync.conf`
+- `/usr/local/bin/partybox-bluetooth-helper.sh`
+
 ## Dependencies
 
 Install core audio packages (PipeWire stack + AirPlay + Bluetooth):
@@ -82,7 +107,31 @@ curl -sS -X POST "http://127.0.0.1:5000/api/admin/bluetooth_discoverable?key=JBO
   -d '{"seconds":300}'
 ```
 
-## AirPlay Troubleshooting
+## Privilege Model (sudoers)
+
+`partybox.service` runs as user `partybox`. Mode switching calls privileged commands via `sudo -n`.
+
+Recommended minimal sudoers file (example `/etc/sudoers.d/partybox-audio-mode`):
+
+```text
+partybox ALL=(root) NOPASSWD: /bin/systemctl *
+partybox ALL=(root) NOPASSWD: /usr/bin/bluetoothctl *
+```
+
+Validate sudoers edits safely:
+
+```bash
+sudo visudo -cf /etc/sudoers.d/partybox-audio-mode
+```
+
+## Troubleshooting
+
+Check current mode + service states:
+
+```bash
+curl -sS "http://127.0.0.1:5000/api/admin/media_mode_status?key=JBOX" | jq .
+journalctl -u partybox -n 200 --no-pager | rg audio_mode
+```
 
 AirPlay target not visible:
 
@@ -127,3 +176,19 @@ sudo /usr/bin/shairport-sync -c /etc/partybox/shairport-sync.conf --displayConfi
 - AirPlay receiver is LAN-visible. Restrict untrusted clients at network level.
 - Bluetooth discoverable mode should be time-limited for public spaces.
 - Pairing data is preserved between mode switches unless manually removed.
+
+## Quick Test Checklist
+
+1. Start in `partybox` mode and play one local/queued item.
+2. Switch to `airplay`; confirm PartyBox playback stops and AirPlay stream is audible.
+3. Switch to `bluetooth`; confirm AirPlay stops and Bluetooth stream is audible.
+4. Switch to `spotify`; confirm Bluetooth helper deactivates and Spotify Connect works.
+5. Switch to `tv`; confirm PartyBox playback remains paused/stopped.
+6. Switch to `mute`; confirm no managed audio mode is audible.
+7. Restart `partybox.service`; confirm previously selected `media_mode` is re-applied.
+
+Optional automation helper:
+
+```bash
+PARTYBOX_BASE_URL=http://127.0.0.1:5000 PARTYBOX_ADMIN_KEY=JBOX ./tools/mode_switch_test.sh
+```
