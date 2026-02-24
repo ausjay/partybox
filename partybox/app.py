@@ -1208,6 +1208,14 @@ def create_app() -> Flask:
         _admin_or_403()
         return jsonify({"ok": True, "status": audio_mode_mgr.get_media_mode_status(refresh=True)})
 
+    @app.post("/api/admin/bluetooth_discoverable")
+    def api_admin_bluetooth_discoverable():
+        _admin_or_403()
+        data = request.get_json(force=True, silent=True) or {}
+        seconds = int(data.get("seconds", 300) or 300)
+        result = audio_mode_mgr.make_bluetooth_discoverable(seconds=seconds)
+        return jsonify(result), (200 if bool(result.get("ok")) else 500)
+
     @app.get("/api/tv/status")
     def api_tv_status():
         try:

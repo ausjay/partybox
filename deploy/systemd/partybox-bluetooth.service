@@ -1,0 +1,16 @@
+[Unit]
+Description=PartyBox Bluetooth Input Helper
+After=bluetooth.service pipewire.service wireplumber.service
+Wants=bluetooth.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=root
+Environment=PARTYBOX_BT_ALIAS=PartyBox BT
+Environment=PARTYBOX_BT_DISCOVERABLE_TIMEOUT=300
+ExecStart=/usr/local/bin/partybox-bluetooth-helper.sh start
+ExecStop=/usr/local/bin/partybox-bluetooth-helper.sh stop
+
+[Install]
+WantedBy=multi-user.target

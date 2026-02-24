@@ -270,6 +270,41 @@ class AudioModeManager:
         self._status_cache_ts = now
         return payload
 
+    def make_bluetooth_discoverable(self, seconds: int = 300) -> Dict[str, Any]:
+        duration = max(30, min(1800, int(seconds or 300)))
+        actions: List[Dict[str, Any]] = []
+
+        for unit in ("bluetooth.service", "partybox-bluetooth.service"):
+            r = self._systemctl("start", unit, tolerate_missing=False)
+            r["action"] = "systemctl_start"
+            r["unit"] = unit
+            actions.append(r)
+            if not r.get("ok"):
+                msg = f"failed to start {unit}: {r.get('stderr') or r.get('stdout')}"
+                self._persist_last_error(msg)
+                self._persist_actions(actions)
+                return {"ok": False, "error": msg, "status": self.get_media_mode_status(refresh=True)}
+
+        for bt_args in (
+            ("power", "on"),
+            ("pairable", "on"),
+            ("discoverable-timeout", str(duration)),
+            ("discoverable", "on"),
+            ("system-alias", self._bt_alias),
+        ):
+            r = self._bluetoothctl_single(*bt_args)
+            r["action"] = "bluetoothctl"
+            r["args"] = " ".join(bt_args)
+            actions.append(r)
+
+        self._status_cache_ts = 0.0
+        self._persist_actions(actions)
+        return {
+            "ok": True,
+            "seconds": duration,
+            "status": self.get_media_mode_status(refresh=True),
+        }
+
     def set_media_mode(
         self,
         mode: str,

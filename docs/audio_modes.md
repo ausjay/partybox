@@ -27,11 +27,11 @@ Mode state is persisted in DB setting `media_mode`, with diagnostics in:
 
 ## Dependencies
 
-Install core audio packages (PipeWire stack + AirPlay receiver):
+Install core audio packages (PipeWire stack + AirPlay + Bluetooth):
 
 ```bash
 sudo apt update
-sudo apt install -y pipewire wireplumber pipewire-pulse pulseaudio-utils shairport-sync
+sudo apt install -y pipewire wireplumber pipewire-pulse pulseaudio-utils shairport-sync bluez
 ```
 
 `pipewire-pulse` allows apps using PulseAudio APIs to route into PipeWire.
@@ -55,6 +55,33 @@ sudo systemctl enable partybox-airplay.service
 
 Note: this service is mode-managed. It can be enabled at boot, but PartyBox mode switching will stop/start it as needed.
 
+## Bluetooth Service Setup
+
+Template files in repo:
+
+- `deploy/systemd/partybox-bluetooth.service`
+- `deploy/bin/partybox-bluetooth-helper.sh`
+
+Install:
+
+```bash
+sudo cp /home/user/projects/partybox/deploy/bin/partybox-bluetooth-helper.sh /usr/local/bin/partybox-bluetooth-helper.sh
+sudo chmod +x /usr/local/bin/partybox-bluetooth-helper.sh
+sudo cp /home/user/projects/partybox/deploy/systemd/partybox-bluetooth.service /etc/systemd/system/partybox-bluetooth.service
+sudo systemctl daemon-reload
+sudo systemctl enable partybox-bluetooth.service
+```
+
+The helper intentionally does **not** clear pairings. It only toggles discoverable/pairable and adapter alias/power.
+
+Optional discoverable window refresh (admin API):
+
+```bash
+curl -sS -X POST "http://127.0.0.1:5000/api/admin/bluetooth_discoverable?key=JBOX" \
+  -H "Content-Type: application/json" \
+  -d '{"seconds":300}'
+```
+
 ## AirPlay Troubleshooting
 
 AirPlay target not visible:
@@ -71,9 +98,32 @@ wpctl status
 pactl list short sinks
 ```
 
+Bluetooth pairing issues:
+
+```bash
+systemctl status partybox-bluetooth.service
+journalctl -u partybox-bluetooth.service -n 120 --no-pager
+bluetoothctl show
+bluetoothctl devices
+bluetoothctl devices Connected
+```
+
+Mode conflicts:
+
+```bash
+curl -sS "http://127.0.0.1:5000/api/admin/media_mode_status?key=JBOX" | jq .
+journalctl -u partybox -n 200 --no-pager | rg audio_mode
+```
+
 Shairport config parse issues:
 
 ```bash
 shairport-sync -V
 sudo /usr/bin/shairport-sync -c /etc/partybox/shairport-sync.conf --displayConfig
 ```
+
+## Security Notes
+
+- AirPlay receiver is LAN-visible. Restrict untrusted clients at network level.
+- Bluetooth discoverable mode should be time-limited for public spaces.
+- Pairing data is preserved between mode switches unless manually removed.
