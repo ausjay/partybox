@@ -21,8 +21,8 @@
         </div>
 
         <div class="pill" title="Mode">
-          <span id="top_mode_dot" class="dot {% if av_mode != 'spotify' and paused %}warn{% else %}ok{% endif %}"></span>
-          <span id="top_mode_text">{% if av_mode == 'spotify' %}Mode: Spotify{% elif paused %}Mode: PartyBox • Paused{% else %}Mode: PartyBox{% endif %}</span>
+          <span id="top_mode_dot" class="dot {% if media_mode == 'mute' %}warn{% else %}ok{% endif %}"></span>
+          <span id="top_mode_text">Mode: {{ media_mode|capitalize }}</span>
         </div>
 
         <div id="top_lock_pill" class="pill" title="Requests lock" style="{% if not locked %}display:none;{% endif %}">
@@ -106,17 +106,28 @@
 
             <div class="panelHeader" style="padding: 0 0 10px; border-bottom: none;">
               <div class="kicker">Audio</div>
-              <div class="hint">Mute affects PartyBox output</div>
+              <div class="hint">Only one media mode is active at a time</div>
             </div>
 
             <div class="btnGroup audioControls">
               <button id="btn_mute" class="btn {% if muted %}primary{% else %}ghost{% endif %}" onclick="toggleMute()">
                 {% if muted %}Unmute{% else %}Mute{% endif %}
               </button>
-
-              <button id="btn_av_partybox" class="btn {% if av_mode != 'spotify' %}primary{% else %}ghost{% endif %}" onclick="avMode('partybox')">PartyBox Mode</button>
-              <button id="btn_av_spotify" class="btn {% if av_mode == 'spotify' %}primary{% else %}ghost{% endif %}" onclick="avMode('spotify')">Spotify Mode</button>
             </div>
+            <div style="height:10px;"></div>
+            <div class="row" style="margin:0;">
+              <select id="media_mode_select" class="input" style="min-width:220px;">
+                <option value="partybox" {% if media_mode == 'partybox' %}selected{% endif %}>PartyBox</option>
+                <option value="spotify" {% if media_mode == 'spotify' %}selected{% endif %}>Spotify</option>
+                <option value="airplay" {% if media_mode == 'airplay' %}selected{% endif %}>AirPlay</option>
+                <option value="bluetooth" {% if media_mode == 'bluetooth' %}selected{% endif %}>Bluetooth</option>
+                <option value="tv" {% if media_mode == 'tv' %}selected{% endif %}>TV</option>
+                <option value="mute" {% if media_mode == 'mute' %}selected{% endif %}>Mute</option>
+              </select>
+              <button id="btn_media_mode_apply" class="btn primary" onclick="applyMediaMode()">Apply Mode</button>
+            </div>
+            <div id="media_mode_help" class="muted" style="margin-top:10px;"></div>
+            <div id="media_mode_status" class="muted" style="margin-top:8px; white-space:pre-line;"></div>
 
             <div style="height:12px;"></div>
 
@@ -273,7 +284,18 @@
     locked: {{ "true" if locked else "false" }},
     paused: {{ "true" if paused else "false" }},
     muted: {{ "true" if muted else "false" }},
-    av_mode: "{{ av_mode|e }}"
+    av_mode: "{{ av_mode|e }}",
+    media_mode: "{{ media_mode|e }}",
+    media_mode_status: null
+  };
+
+  const MEDIA_MODE_HELP = {
+    partybox: "PartyBox: local queue playback via MPV.",
+    spotify: "Spotify: use Spotify Connect on the PartyBox house account/device.",
+    airplay: "AirPlay: connect from iPhone/iPad/Mac to 'PartyBox AirPlay'.",
+    bluetooth: "Bluetooth: pair your phone with 'PartyBox BT' and stream audio.",
+    tv: "TV: keep TV channel audio active; PartyBox queue stays paused.",
+    mute: "Mute: force all managed audio modes silent.",
   };
 
   function post(path, body) {
@@ -310,27 +332,31 @@
     btn.textContent = locked ? "Unlock Requests" : "Lock Requests";
   }
 
-  function setTopMode(avMode, paused) {
+  function modeLabel(mediaMode, paused) {
+    const m = String(mediaMode || "partybox").toLowerCase();
+    if (m === "spotify") return "Mode: Spotify";
+    if (m === "airplay") return "Mode: AirPlay";
+    if (m === "bluetooth") return "Mode: Bluetooth";
+    if (m === "tv") return "Mode: TV";
+    if (m === "mute") return "Mode: Mute";
+    if (paused) return "Mode: PartyBox • Paused";
+    return "Mode: PartyBox";
+  }
+
+  function setTopMode(mediaMode, paused) {
     const dot = document.getElementById("top_mode_dot");
     const txt = document.getElementById("top_mode_text");
     dot.classList.remove("ok","warn","bad");
 
-    if (avMode === "spotify") {
-      dot.classList.add("ok");
-      txt.textContent = "Mode: Spotify";
-    } else if (paused) {
+    const m = String(mediaMode || "partybox").toLowerCase();
+    if (m === "mute") {
       dot.classList.add("warn");
-      txt.textContent = "Mode: PartyBox • Paused";
+    } else if (m === "partybox" && paused) {
+      dot.classList.add("warn");
     } else {
       dot.classList.add("ok");
-      txt.textContent = "Mode: PartyBox";
     }
-
-    // highlight the mode buttons
-    const pb = document.getElementById("btn_av_partybox");
-    const sp = document.getElementById("btn_av_spotify");
-    pb.className = "btn " + (avMode === "spotify" ? "ghost" : "primary");
-    sp.className = "btn " + (avMode === "spotify" ? "primary" : "ghost");
+    txt.textContent = modeLabel(m, paused);
   }
 
   function setTopHealth(ok, summary) {
@@ -457,7 +483,7 @@
     const btn = document.getElementById("btn_pause_resume");
     btn.className = "btn " + (paused ? "primary" : "pink");
     btn.textContent = paused ? "Resume" : "Pause";
-    setTopMode(STATE.av_mode, paused);
+    setTopMode(STATE.media_mode, paused);
 
     // Update header badges
     const hint = document.getElementById("now_header_hint");
@@ -481,11 +507,44 @@
     b.textContent = enabled ? "Hide TV QR" : "Show TV QR";
   }
 
+  function renderMediaModeStatus(status) {
+    const select = document.getElementById("media_mode_select");
+    const help = document.getElementById("media_mode_help");
+    const box = document.getElementById("media_mode_status");
+    const mode = String((STATE && STATE.media_mode) || "partybox").toLowerCase();
+    if (select) select.value = mode;
+    if (help) help.textContent = MEDIA_MODE_HELP[mode] || "";
+    if (!box) return;
+
+    if (!status || typeof status !== "object") {
+      box.textContent = "";
+      return;
+    }
+
+    const services = status.services || {};
+    const lines = [];
+    lines.push(`Current mode: ${mode}`);
+    Object.keys(services).sort().forEach((name) => {
+      const s = services[name] || {};
+      lines.push(`- ${name}: ${s.active ? "active" : "inactive"} (${s.status || "unknown"})`);
+    });
+
+    const btDevices = Array.isArray(status.bluetooth_connected_devices)
+      ? status.bluetooth_connected_devices.filter(Boolean)
+      : [];
+    if (mode === "bluetooth") {
+      lines.push(`Bluetooth connected: ${btDevices.length ? btDevices.join(", ") : "none"}`);
+    }
+
+    if (status.last_error) lines.push(`Last error: ${status.last_error}`);
+    box.textContent = lines.join("\n");
+  }
+
   function updateNowCardFromState(state) {
     // This uses /api/state for PartyBox queue and Spotify metadata.
     const now = state.now;
     const spotify = state.spotify || {};
-    const avMode = (state.av_mode || "partybox").toLowerCase();
+    const mediaMode = (state.media_mode || "partybox").toLowerCase();
 
     const titleEl = document.getElementById("now_title");
     const subEl = document.getElementById("now_sub");
@@ -504,7 +563,7 @@
     const kvRequests = document.getElementById("kv_requests");
     const kvAv = document.getElementById("kv_av");
 
-    if (avMode === "spotify") {
+    if (mediaMode === "spotify") {
       const track = spotify.track || {};
       const title = (track.name || "").trim();
       const artists = Array.isArray(track.artists) ? track.artists.filter(Boolean).join(", ") : "";
@@ -553,7 +612,7 @@
 
     kvPlayback.textContent = (state.paused ? "Paused" : "Playing") + (state.muted ? " • Muted" : "");
     kvRequests.textContent = state.locked ? "Locked" : "Open";
-    kvAv.textContent = (state.av_mode === "spotify") ? "Spotify" : "PartyBox";
+    kvAv.textContent = modeLabel(mediaMode, false).replace("Mode: ", "");
   }
 
   function renderQueue(items) {
@@ -825,16 +884,29 @@
       .catch(e => setStatus('Error: ' + (e.message || 'unknown')));
   }
 
-  function avMode(mode) {
+  function applyMediaMode() {
+    const sel = document.getElementById("media_mode_select");
+    const mode = sel ? String(sel.value || "").toLowerCase() : "";
+    if (!mode) return;
     setStatus("");
-    // optimistic
-    STATE.av_mode = mode;
+    const prevMode = STATE.media_mode;
+    STATE.media_mode = mode;
     setTopMode(mode, STATE.paused);
+    renderMediaModeStatus(STATE.media_mode_status);
 
-    post('/api/admin/av_mode', {mode})
-      .then(() => { setStatus(`Mode set: ${mode}`); pollState(); })
+    post('/api/admin/media_mode', {mode})
+      .then((j) => {
+        STATE.media_mode = (j.mode || mode).toLowerCase();
+        STATE.media_mode_status = j.status || null;
+        setTopMode(STATE.media_mode, STATE.paused);
+        renderMediaModeStatus(STATE.media_mode_status);
+        setStatus(`Mode set: ${STATE.media_mode}`);
+        pollState();
+      })
       .catch(e => {
-        // rollback by polling
+        STATE.media_mode = prevMode;
+        setTopMode(STATE.media_mode, STATE.paused);
+        renderMediaModeStatus(STATE.media_mode_status);
         setStatus('Error: ' + (e.message || 'unknown'));
         pollState();
       });
@@ -860,21 +932,25 @@
         paused: !!j.paused,
         muted: !!j.muted,
         av_mode: (j.av_mode || "partybox").toLowerCase(),
+        media_mode: (j.media_mode || "partybox").toLowerCase(),
         tv_qr_enabled: !!(j.tv_qr_enabled ?? true),
         now: j.now || null,
-        spotify: j.spotify || null
+        spotify: j.spotify || null,
+        media_mode_status: j.media_mode_status || null
       };
 
       setTopLock(STATE.locked);
-      setTopMode(STATE.av_mode, STATE.paused);
+      setTopMode(STATE.media_mode, STATE.paused);
       setMuted(STATE.muted);
       setPaused(STATE.paused, STATE.muted);
       setTvQrEnabled(STATE.tv_qr_enabled);
+      renderMediaModeStatus(STATE.media_mode_status);
       updateNowCardFromState({
         locked: STATE.locked,
         paused: STATE.paused,
         muted: STATE.muted,
         av_mode: STATE.av_mode,
+        media_mode: STATE.media_mode,
         now: STATE.now,
         spotify: STATE.spotify
       });
