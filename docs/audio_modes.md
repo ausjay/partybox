@@ -81,6 +81,7 @@ sudo systemctl enable partybox-airplay.service
 
 Note: this service is mode-managed. It can be enabled at boot, but PartyBox mode switching will stop/start it as needed.  
 Advertised AirPlay name is `PartyBox`.
+`/etc/partybox/shairport-sync.conf` sets RAOP `port = 7000` to avoid conflict with PartyBox API (`:5000`).
 
 ## Bluetooth Service Setup
 
