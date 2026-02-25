@@ -54,7 +54,8 @@ class AudioModeManager:
         try:
             proc = subprocess.Popen(
                 cmd,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
                 start_new_session=True,
             )

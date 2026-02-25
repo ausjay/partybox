@@ -88,6 +88,23 @@
           <!-- Control Sections -->
           <div class="panel" style="background: transparent; border: none; box-shadow: none;">
             <div class="panelHeader" style="padding: 0 0 10px; border-bottom: none;">
+              <div class="kicker">Audio Mode</div>
+              <div class="hint">Select one active source</div>
+            </div>
+
+            <div class="btnGroup audioControls">
+              <button id="btn_mode_partybox" class="btn {% if media_mode == 'partybox' %}primary{% else %}ghost{% endif %}" onclick="setMediaMode('partybox')">PartyBox</button>
+              <button id="btn_mode_spotify" class="btn {% if media_mode == 'spotify' %}primary{% else %}ghost{% endif %}" onclick="setMediaMode('spotify')">Spotify</button>
+              <button id="btn_mode_airplay" class="btn {% if media_mode == 'airplay' %}primary{% else %}ghost{% endif %}" onclick="setMediaMode('airplay')">AirPlay</button>
+              <button id="btn_mode_bluetooth" class="btn {% if media_mode == 'bluetooth' %}primary{% else %}ghost{% endif %}" onclick="setMediaMode('bluetooth')">Bluetooth</button>
+              <button id="btn_mode_tv" class="btn {% if media_mode == 'tv' %}primary{% else %}ghost{% endif %}" onclick="setMediaMode('tv')">TV</button>
+            </div>
+            <div id="media_mode_help" class="muted" style="margin-top:10px;"></div>
+            <div id="media_mode_status" class="muted" style="margin-top:8px; white-space:pre-line;"></div>
+
+            <div style="height:12px;"></div>
+
+            <div class="panelHeader" style="padding: 0 0 10px; border-bottom: none;">
               <div class="kicker">Playback Control</div>
               <div class="hint">Big buttons for bar screen</div>
             </div>
@@ -99,35 +116,12 @@
 
               <button class="btn ghost" onclick="skip()">Skip</button>
 
-              <button class="btn danger btn-stop" onclick="tvStop()">Stop (pause + clear)</button>
-            </div>
-
-            <div style="height:12px;"></div>
-
-            <div class="panelHeader" style="padding: 0 0 10px; border-bottom: none;">
-              <div class="kicker">Audio</div>
-              <div class="hint">Only one media mode is active at a time</div>
-            </div>
-
-            <div class="btnGroup audioControls">
               <button id="btn_mute" class="btn {% if muted %}primary{% else %}ghost{% endif %}" onclick="toggleMute()">
                 {% if muted %}Unmute{% else %}Mute{% endif %}
               </button>
+
+              <button class="btn danger btn-stop" onclick="tvStop()">Stop (pause + clear)</button>
             </div>
-            <div style="height:10px;"></div>
-            <div class="row" style="margin:0;">
-              <select id="media_mode_select" class="input" style="min-width:220px;">
-                <option value="partybox" {% if media_mode == 'partybox' %}selected{% endif %}>PartyBox</option>
-                <option value="spotify" {% if media_mode == 'spotify' %}selected{% endif %}>Spotify</option>
-                <option value="airplay" {% if media_mode == 'airplay' %}selected{% endif %}>AirPlay</option>
-                <option value="bluetooth" {% if media_mode == 'bluetooth' %}selected{% endif %}>Bluetooth</option>
-                <option value="tv" {% if media_mode == 'tv' %}selected{% endif %}>TV</option>
-                <option value="mute" {% if media_mode == 'mute' %}selected{% endif %}>Mute</option>
-              </select>
-              <button id="btn_media_mode_apply" class="btn primary" onclick="applyMediaMode()">Apply Mode</button>
-            </div>
-            <div id="media_mode_help" class="muted" style="margin-top:10px;"></div>
-            <div id="media_mode_status" class="muted" style="margin-top:8px; white-space:pre-line;"></div>
 
             <div style="height:12px;"></div>
 
@@ -507,12 +501,21 @@
     b.textContent = enabled ? "Hide TV QR" : "Show TV QR";
   }
 
+  function setMediaModeButtons(mode) {
+    const m = String(mode || "partybox").toLowerCase();
+    const names = ["partybox", "spotify", "airplay", "bluetooth", "tv"];
+    names.forEach((name) => {
+      const btn = document.getElementById(`btn_mode_${name}`);
+      if (!btn) return;
+      btn.className = "btn " + (m === name ? "primary" : "ghost");
+    });
+  }
+
   function renderMediaModeStatus(status) {
-    const select = document.getElementById("media_mode_select");
     const help = document.getElementById("media_mode_help");
     const box = document.getElementById("media_mode_status");
     const mode = String((STATE && STATE.media_mode) || "partybox").toLowerCase();
-    if (select) select.value = mode;
+    setMediaModeButtons(mode);
     if (help) help.textContent = MEDIA_MODE_HELP[mode] || "";
     if (!box) return;
 
@@ -884,9 +887,8 @@
       .catch(e => setStatus('Error: ' + (e.message || 'unknown')));
   }
 
-  function applyMediaMode() {
-    const sel = document.getElementById("media_mode_select");
-    const mode = sel ? String(sel.value || "").toLowerCase() : "";
+  function setMediaMode(mode) {
+    mode = String(mode || "").toLowerCase();
     if (!mode) return;
     setStatus("");
     const prevMode = STATE.media_mode;
@@ -941,6 +943,7 @@
 
       setTopLock(STATE.locked);
       setTopMode(STATE.media_mode, STATE.paused);
+      setMediaModeButtons(STATE.media_mode);
       setMuted(STATE.muted);
       setPaused(STATE.paused, STATE.muted);
       setTvQrEnabled(STATE.tv_qr_enabled);
