@@ -99,7 +99,6 @@
               <button id="btn_mode_bluetooth" class="btn {% if media_mode == 'bluetooth' %}primary{% else %}ghost{% endif %}" onclick="setMediaMode('bluetooth')">Bluetooth</button>
               <button id="btn_mode_tv" class="btn {% if media_mode == 'tv' %}primary{% else %}ghost{% endif %}" onclick="setMediaMode('tv')">TV</button>
             </div>
-            <div id="media_mode_help" class="muted" style="margin-top:10px;"></div>
             <div id="media_mode_status" class="muted" style="margin-top:8px; white-space:pre-line;"></div>
 
             <div style="height:12px;"></div>
@@ -281,15 +280,6 @@
     av_mode: "{{ av_mode|e }}",
     media_mode: "{{ media_mode|e }}",
     media_mode_status: null
-  };
-
-  const MEDIA_MODE_HELP = {
-    partybox: "PartyBox: local queue playback via MPV.",
-    spotify: "Spotify: use Spotify Connect on the PartyBox house account/device.",
-    airplay: "AirPlay: connect from iPhone/iPad/Mac to 'PartyBox AirPlay'.",
-    bluetooth: "Bluetooth: pair your phone with 'PartyBox BT' and stream audio.",
-    tv: "TV: keep TV channel audio active; PartyBox queue stays paused.",
-    mute: "Mute: force all managed audio modes silent.",
   };
 
   function post(path, body) {
@@ -527,11 +517,9 @@
   }
 
   function renderMediaModeStatus(status) {
-    const help = document.getElementById("media_mode_help");
     const box = document.getElementById("media_mode_status");
     const mode = String((STATE && STATE.media_mode) || "partybox").toLowerCase();
     setMediaModeButtons(mode);
-    if (help) help.textContent = MEDIA_MODE_HELP[mode] || "";
     if (!box) return;
 
     if (!status || typeof status !== "object") {
@@ -539,23 +527,7 @@
       return;
     }
 
-    const services = status.services || {};
-    const lines = [];
-    lines.push(`Current mode: ${mode}`);
-    Object.keys(services).sort().forEach((name) => {
-      const s = services[name] || {};
-      lines.push(`- ${name}: ${s.active ? "active" : "inactive"} (${s.status || "unknown"})`);
-    });
-
-    const btDevices = Array.isArray(status.bluetooth_connected_devices)
-      ? status.bluetooth_connected_devices.filter(Boolean)
-      : [];
-    if (mode === "bluetooth") {
-      lines.push(`Bluetooth connected: ${btDevices.length ? btDevices.join(", ") : "none"}`);
-    }
-
-    if (status.last_error) lines.push(`Last error: ${status.last_error}`);
-    box.textContent = lines.join("\n");
+    box.textContent = status.last_error ? `Mode issue: ${status.last_error}` : "";
   }
 
   function updateNowCardFromState(state) {
