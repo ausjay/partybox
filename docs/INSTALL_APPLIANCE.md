@@ -352,6 +352,13 @@ cd /home/user/projects/partybox
 ./tools/install_kiosk_autostart.sh partybox
 ```
 
+Default launcher behavior enables XFCE "Do Not Disturb" at startup so kiosk display does not show desktop notifications (e.g., Chromium update banners).
+To keep desktop notifications enabled, run with:
+
+```bash
+PARTYBOX_KIOSK_DISABLE_DESKTOP_NOTIFICATIONS=0 ./tools/install_kiosk_autostart.sh partybox
+```
+
 Verify:
 
 ```bash

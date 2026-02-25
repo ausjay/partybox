@@ -1,16 +1,15 @@
 [Unit]
 Description=PartyBox AirPlay Receiver (shairport-sync)
-After=network-online.target sound.target pipewire.service wireplumber.service
-Wants=network-online.target pipewire.service wireplumber.service
+After=network-online.target sound.target avahi-daemon.service
+Wants=network-online.target avahi-daemon.service
 
 [Service]
 Type=simple
-User=partybox
-Group=partybox
-Environment=HOME=/home/partybox
-ExecStart=/usr/bin/shairport-sync -c /etc/partybox/shairport-sync.conf --name "PartyBox AirPlay"
+User=shairport-sync
+Group=shairport-sync
+ExecStart=/usr/bin/shairport-sync -c /etc/partybox/shairport-sync.conf --name "PartyBox"
 Restart=on-failure
-RestartSec=2
+RestartSec=4
 NoNewPrivileges=true
 
 [Install]

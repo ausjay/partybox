@@ -209,15 +209,29 @@ class AudioModeManager:
             out[unit] = {"active": bool(st["ok"]), "status": st["status"], "stderr": st["stderr"]}
         return out
 
-    def _wait_for_service_active(self, unit: str, timeout: float = 8.0, poll_interval: float = 0.25) -> Dict[str, Any]:
+    def _wait_for_service_active(
+        self,
+        unit: str,
+        timeout: float = 8.0,
+        poll_interval: float = 0.25,
+        stable_seconds: float = 1.25,
+    ) -> Dict[str, Any]:
         poll = max(0.1, float(poll_interval))
         checks = max(1, int(float(timeout) / poll))
+        stable_for = max(0.0, float(stable_seconds))
         last: Dict[str, Any] = {"ok": False, "status": "unknown", "stderr": ""}
+        active_since: Optional[float] = None
         for i in range(checks):
             st = self._systemctl_is_active(unit)
             last = st
+            now = time.time()
             if bool(st.get("ok")):
-                return st
+                if active_since is None:
+                    active_since = now
+                if (now - active_since) >= stable_for:
+                    return st
+            else:
+                active_since = None
             status = str(st.get("status") or "").strip().lower()
             # Failed generally means process crashed; no need to continue waiting.
             if status == "failed":

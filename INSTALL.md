@@ -89,6 +89,9 @@ Install desktop autostart for the appliance user:
 ./tools/install_kiosk_autostart.sh partybox
 ```
 
+By default this also enables XFCE "Do Not Disturb" at kiosk launch to suppress desktop notification popups (including Chromium update prompts).
+Use `PARTYBOX_KIOSK_DISABLE_DESKTOP_NOTIFICATIONS=0` when running the installer to opt out.
+
 This creates:
 
 - `/home/partybox/.local/bin/partybox-open-tv.sh`

@@ -29,7 +29,7 @@ Switch behavior by target mode:
 
 - `partybox`: stops AirPlay/Bluetooth/librespot mode services, unmutes sink, resumes PartyBox playback (`tv_paused=0`).
 - `spotify`: pauses PartyBox playback, stops AirPlay/Bluetooth services, starts `librespot.service`.
-- `airplay`: pauses PartyBox playback, stops librespot and Bluetooth helper service, starts `partybox-airplay.service`.
+- `airplay`: pauses PartyBox playback, stops librespot and Bluetooth helper service, starts AirPlay receiver (`partybox-airplay.service`, fallback `shairport-sync.service`).
 - `bluetooth`: pauses PartyBox playback, stops librespot and AirPlay service, starts Bluetooth helper service.
 - `tv`: pauses PartyBox playback, stops AirPlay/Bluetooth/librespot services, leaves TV channel audio path available.
 - `mute`: stops all managed mode services and mutes default audio sink.
@@ -59,7 +59,8 @@ sudo apt update
 sudo apt install -y pipewire wireplumber pipewire-pulse pulseaudio-utils shairport-sync bluez
 ```
 
-`pipewire-pulse` allows apps using PulseAudio APIs to route into PipeWire.
+`pipewire-pulse` allows apps using PulseAudio APIs to route into PipeWire.  
+AirPlay template in this repo uses ALSA backend for reliability on kiosk hosts.
 
 ## AirPlay Service Setup
 
@@ -78,7 +79,8 @@ sudo systemctl daemon-reload
 sudo systemctl enable partybox-airplay.service
 ```
 
-Note: this service is mode-managed. It can be enabled at boot, but PartyBox mode switching will stop/start it as needed.
+Note: this service is mode-managed. It can be enabled at boot, but PartyBox mode switching will stop/start it as needed.  
+Advertised AirPlay name is `PartyBox`.
 
 ## Bluetooth Service Setup
 
@@ -137,7 +139,9 @@ AirPlay target not visible:
 
 ```bash
 systemctl status partybox-airplay.service
+systemctl status shairport-sync.service
 journalctl -u partybox-airplay.service -n 120 --no-pager
+journalctl -u shairport-sync.service -n 120 --no-pager
 ```
 
 No audio output:

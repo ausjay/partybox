@@ -90,6 +90,9 @@ Install kiosk desktop autostart:
 ./tools/install_kiosk_autostart.sh partybox
 ```
 
+Kiosk launcher defaults to suppress desktop notification banners (including Chromium update popups).  
+Set `PARTYBOX_KIOSK_DISABLE_DESKTOP_NOTIFICATIONS=0` before running installer if you want banners enabled.
+
 ## Operational Commands
 
 ```bash
