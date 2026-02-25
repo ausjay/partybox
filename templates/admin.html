@@ -281,6 +281,7 @@
     media_mode: "{{ media_mode|e }}",
     media_mode_status: null
   };
+  let PENDING_MEDIA_MODE = "";
 
   function post(path, body) {
     return fetch(path + `?key=${encodeURIComponent(KEY)}`, {
@@ -516,9 +517,27 @@
     });
   }
 
+  function setMediaModeButtonsEnabled(enabled) {
+    const names = ["partybox", "spotify", "airplay", "bluetooth", "tv"];
+    names.forEach((name) => {
+      const btn = document.getElementById(`btn_mode_${name}`);
+      if (!btn) return;
+      btn.disabled = !enabled;
+    });
+  }
+
+  function effectiveMediaMode(status) {
+    const pending = String(PENDING_MEDIA_MODE || "").toLowerCase();
+    if (pending) return pending;
+    const stateMode = String((STATE && STATE.media_mode) || "").toLowerCase();
+    if (stateMode) return stateMode;
+    const statusMode = String((status && status.mode) || "").toLowerCase();
+    return statusMode || "partybox";
+  }
+
   function renderMediaModeStatus(status) {
     const box = document.getElementById("media_mode_status");
-    const mode = String((STATE && STATE.media_mode) || "partybox").toLowerCase();
+    const mode = effectiveMediaMode(status);
     setMediaModeButtons(mode);
     if (!box) return;
 
@@ -884,15 +903,22 @@
   function setMediaMode(mode) {
     mode = String(mode || "").toLowerCase();
     if (!mode) return;
+    if (PENDING_MEDIA_MODE) return;
     setStatus("");
     const prevMode = STATE.media_mode;
+    PENDING_MEDIA_MODE = mode;
+    setMediaModeButtonsEnabled(false);
     STATE.media_mode = mode;
     setTopMode(mode, STATE.paused);
     setPlaybackControlsEnabled(mode);
     renderMediaModeStatus(STATE.media_mode_status);
+    setStatus(`Switching mode to ${mode}...`);
 
     post('/api/admin/media_mode', {mode})
       .then((j) => {
+        if (j && j.ok === false) throw new Error(j.error || "mode switch failed");
+        PENDING_MEDIA_MODE = "";
+        setMediaModeButtonsEnabled(true);
         STATE.media_mode = (j.mode || mode).toLowerCase();
         STATE.media_mode_status = j.status || null;
         setTopMode(STATE.media_mode, STATE.paused);
@@ -901,6 +927,8 @@
         pollState();
       })
       .catch(e => {
+        PENDING_MEDIA_MODE = "";
+        setMediaModeButtonsEnabled(true);
         STATE.media_mode = prevMode;
         setTopMode(STATE.media_mode, STATE.paused);
         setPlaybackControlsEnabled(STATE.media_mode);
@@ -936,10 +964,14 @@
         spotify: j.spotify || null,
         media_mode_status: j.media_mode_status || null
       };
+      if (PENDING_MEDIA_MODE && STATE.media_mode === PENDING_MEDIA_MODE) {
+        PENDING_MEDIA_MODE = "";
+        setMediaModeButtonsEnabled(true);
+      }
 
       setTopLock(STATE.locked);
-      setTopMode(STATE.media_mode, STATE.paused);
-      setMediaModeButtons(STATE.media_mode);
+      setTopMode(effectiveMediaMode(STATE.media_mode_status), STATE.paused);
+      setMediaModeButtons(effectiveMediaMode(STATE.media_mode_status));
       setPlaybackControlsEnabled(STATE.media_mode);
       setMuted(STATE.muted);
       setPaused(STATE.paused, STATE.muted);
@@ -967,6 +999,11 @@
       if (!j || !j.ok) return;
       if (!STATE) STATE = {};
       STATE.media_mode_status = j.status || null;
+      const reportedMode = String(((j.status || {}).mode) || "").toLowerCase();
+      if (PENDING_MEDIA_MODE && reportedMode && reportedMode === PENDING_MEDIA_MODE) {
+        PENDING_MEDIA_MODE = "";
+        setMediaModeButtonsEnabled(true);
+      }
       renderMediaModeStatus(STATE.media_mode_status);
     } catch (e) {
       // ignore transient

@@ -23,6 +23,7 @@ MANAGED_MODE_SERVICES = (
     "librespot.service",
     "partybox-airplay.service",
     "partybox-bluetooth.service",
+    "shairport-sync.service",
 )
 
 MODE_START_SERVICES = {
@@ -343,6 +344,16 @@ class AudioModeManager:
         actions: List[Dict[str, Any]],
     ) -> None:
         start_units = list(MODE_START_SERVICES.get(mode, ()))
+
+        # Keep startup "ensure active" behavior consistent with normal mode switches:
+        # stop all non-target managed services before starting the target service(s).
+        for unit in MANAGED_MODE_SERVICES:
+            if unit in start_units:
+                continue
+            r = self._systemctl("stop", unit, tolerate_missing=True)
+            r["action"] = "systemctl_stop"
+            r["unit"] = unit
+            actions.append(r)
 
         if mode == "mute":
             actions.append({"action": "sink_mute", **self._set_sink_mute(True)})
