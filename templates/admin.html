@@ -99,7 +99,7 @@
               <button id="btn_mode_bluetooth" class="btn {% if media_mode == 'bluetooth' %}primary{% else %}ghost{% endif %}" onclick="setMediaMode('bluetooth')">Bluetooth</button>
               <button id="btn_mode_tv" class="btn {% if media_mode == 'tv' %}primary{% else %}ghost{% endif %}" onclick="setMediaMode('tv')">TV</button>
             </div>
-            <div id="media_mode_status" class="muted" style="margin-top:8px; white-space:pre-line;"></div>
+            <div id="media_mode_status" class="muted" style="margin-top:8px; white-space:pre-line; display:none;"></div>
 
             <div style="height:12px;"></div>
 
@@ -524,10 +524,17 @@
 
     if (!status || typeof status !== "object") {
       box.textContent = "";
+      box.style.display = "none";
       return;
     }
 
-    box.textContent = status.last_error ? `Mode issue: ${status.last_error}` : "";
+    if (status.last_error) {
+      box.textContent = `Mode issue: ${status.last_error}`;
+      box.style.display = "block";
+      return;
+    }
+    box.textContent = "";
+    box.style.display = "none";
   }
 
   function updateNowCardFromState(state) {
