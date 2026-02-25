@@ -545,13 +545,14 @@ def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
         s.strip()
         for s in os.getenv(
             "PARTYBOX_HEALTH_REQUIRED_SERVICES",
-            "partybox.service,lightdm.service,nginx.service,librespot.service",
+            "partybox.service,lightdm.service,nginx.service,librespot.service,partybox-airplay.service,shairport-sync.service",
         ).split(",")
         if s.strip()
     ]
     media_mode = (DB.get_setting("media_mode", "") or "").strip().lower()
     if media_mode not in VALID_MEDIA_MODE_SET:
         av_mode = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
+        media_mode = "spotify" if av_mode == "spotify" else "partybox"
     else:
         av_mode = "spotify" if media_mode == "spotify" else "partybox"
     service_checks: Dict[str, Any] = {}
@@ -570,6 +571,31 @@ def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
         librespot_check["ok"] = True
         librespot_check["note"] = "n/a while PartyBox backend is active"
 
+    for airplay_unit in ("partybox-airplay.service", "shairport-sync.service"):
+        if airplay_unit not in service_checks:
+            service_checks[airplay_unit] = _service_check(airplay_unit)
+
+    partybox_airplay = service_checks.get("partybox-airplay.service") or {}
+    shairport_builtin = service_checks.get("shairport-sync.service") or {}
+    airplay_any_active = bool(partybox_airplay.get("ok")) or bool(shairport_builtin.get("ok"))
+    if media_mode != "airplay":
+        for unit_name in ("partybox-airplay.service", "shairport-sync.service"):
+            unit = service_checks.get(unit_name) or {}
+            unit["optional"] = True
+            unit["n_a"] = True
+            unit["ok"] = True
+            unit["note"] = "n/a while AirPlay mode is inactive"
+    else:
+        if airplay_any_active:
+            if bool(partybox_airplay.get("ok")):
+                shairport_builtin["optional"] = True
+                shairport_builtin["ok"] = True
+                shairport_builtin["note"] = "alternate AirPlay service not required (partybox-airplay active)"
+            else:
+                partybox_airplay["optional"] = True
+                partybox_airplay["ok"] = True
+                partybox_airplay["note"] = "alternate AirPlay service active (shairport-sync)"
+
     require_player = os.getenv("PARTYBOX_HEALTH_REQUIRE_PLAYER_SERVICE", "0") == "1"
     player_expected_user = (
         os.getenv("PARTYBOX_PLAYER_SERVICE_USER", "partybox").strip() if require_player else None
@@ -579,10 +605,10 @@ def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
     # Keep it visible in health details, but optional by default so it does not
     # degrade global health on its own.
     player_check["optional"] = not require_player
-    if av_mode == "spotify":
+    if media_mode != "partybox":
         player_check["n_a"] = True
         player_check["ok"] = True
-        player_check["note"] = "n/a while Spotify backend is active"
+        player_check["note"] = f"n/a while {media_mode} mode is active"
     elif not require_player and not bool(player_check.get("ok")):
         player_check["ok"] = True
         player_check["note"] = "optional service (inactive is allowed)"

@@ -25,11 +25,11 @@
   <div id="tv_top_pills" style="position: fixed; left: 16px; top: 16px; display:flex; gap:10px; align-items:center; z-index: 50;">
     <div class="pill">
       <span id="tv_dot" class="dot warn"></span>
-      <span id="mode_label">PartyBox</span>
+      <span id="mode_label">Mode: PartyBox</span>
     </div>
-    <div id="tv_now_pill" class="pill">
-      <span class="muted">Now</span>
-      <span id="now_label" class="ellip" style="max-width: 70vw;">—</span>
+    <div class="pill">
+      <span id="tv_status_dot" class="dot warn"></span>
+      <span id="tv_status_label">Status: Idle</span>
     </div>
   </div>
 
@@ -121,22 +121,53 @@
       QR_READY = true;
     }
 
-    function setModePill(mode, tvOnline, avMode) {
+    function setModePill(mode, tvOnline, mediaMode) {
       const dot = el("tv_dot");
       dot.classList.remove("ok","warn","bad");
 
-      // color rules
-      if ((avMode || "").toLowerCase() === "spotify") dot.classList.add("ok");
-      else if (!tvOnline) dot.classList.add("bad");
-      else if (mode === "paused") dot.classList.add("warn");
+      const mm = String(mediaMode || "partybox").toLowerCase();
+      if (!tvOnline) dot.classList.add("bad");
+      else if (mm === "mute") dot.classList.add("warn");
       else dot.classList.add("ok");
 
-      // Keep wording aligned with Admin/User mode pills.
       let label = "Mode: PartyBox";
-      if ((avMode || "").toLowerCase() === "spotify") label = "Mode: Spotify";
-      else if (mode === "paused") label = "Mode: PartyBox • Paused";
+      if (mm === "spotify") label = "Mode: Spotify";
+      else if (mm === "airplay") label = "Mode: AirPlay";
+      else if (mm === "bluetooth") label = "Mode: Bluetooth";
+      else if (mm === "tv") label = "Mode: TV";
+      else if (mm === "mute") label = "Mode: Mute";
 
       el("mode_label").textContent = label;
+    }
+
+    function setStatusPill(mode, mediaMode, paused, muted) {
+      const dot = el("tv_status_dot");
+      const label = el("tv_status_label");
+      dot.classList.remove("ok", "warn", "bad");
+
+      const mm = String(mediaMode || "partybox").toLowerCase();
+      const playbackMode = String(mode || "").toLowerCase();
+      const isPaused = !!paused || playbackMode === "paused";
+      const isMuted = !!muted || mm === "mute";
+
+      let statusText = "Idle";
+      if (mm === "mute") {
+        statusText = "Muted";
+      } else if (mm !== "partybox") {
+        const pretty = String(el("mode_label").textContent || "Mode: PartyBox").replace("Mode: ", "");
+        statusText = `${pretty} Active`;
+      } else if (isPaused) {
+        statusText = "Paused";
+      } else if (playbackMode === "playing") {
+        statusText = "Playing";
+      } else if (playbackMode === "queue") {
+        statusText = "Queued";
+      }
+
+      if (isMuted && statusText !== "Muted") statusText = `${statusText} • Muted`;
+      if (isMuted || isPaused || playbackMode === "queue" || playbackMode === "empty") dot.classList.add("warn");
+      else dot.classList.add("ok");
+      label.textContent = `Status: ${statusText}`;
     }
 
     function setPausedUi(show, reasonText) {
@@ -207,7 +238,7 @@
       el("tv_spotify_total").textContent = fmtMs(duration);
     }
 
-    function updateSpotifyUi(av) {
+    function updateSpotifyUi(mediaMode) {
       const banner = el("tv_spotify_banner");
       const bannerText = el("tv_spotify_banner_text");
       const panel = el("tv_spotify_panel");
@@ -224,7 +255,7 @@
       const acctName = s && s.account && s.account.display_name ? s.account.display_name : "";
       const acct = acctName ? ` • Spotify Account: ${acctName}` : "";
 
-      if (av !== "spotify") {
+      if (String(mediaMode || "").toLowerCase() !== "spotify") {
         banner.classList.add("hidden");
         panel.classList.add("hidden");
         document.body.classList.remove("spotify-mode");
@@ -233,7 +264,7 @@
       }
 
       document.body.classList.add("spotify-mode");
-      el("tv_top_pills").style.display = "none";
+      el("tv_top_pills").style.display = "flex";
       bannerText.textContent = `Spotify Mode Active${acct}`;
       banner.classList.remove("hidden");
       panel.classList.remove("hidden");
@@ -277,25 +308,23 @@
       if (!STATE) return;
       ensureQr();
 
-      const av = (STATE.av_mode || "partybox").toLowerCase();
+      const mediaMode = (STATE.media_mode || "partybox").toLowerCase();
       const paused = !!STATE.paused;
+      const muted = !!STATE.muted;
       const mode = (STATE.mode || "").toLowerCase();
-      const now = STATE.now || null;
       const qrEnabled = !!(STATE.tv_qr_enabled ?? true);
 
-      const nowTitle = (now && now.title) ? now.title : "—";
-      el("now_label").textContent = nowTitle;
-      updateSpotifyUi(av);
-      if (av !== "spotify") el("tv_now_pill").style.display = "";
+      updateSpotifyUi(mediaMode);
 
-      setModePill(mode, tvOnline, av);
+      setModePill(mode, tvOnline, mediaMode);
+      setStatusPill(mode, mediaMode, paused, muted);
 
-      const partyboxMode = av !== "spotify";
+      const partyboxMode = mediaMode === "partybox";
       const idlePartybox = qrEnabled && partyboxMode && !paused && mode === "empty";
 
       el("tv_qr_idle").classList.toggle("hidden", !idlePartybox);
 
-      if (paused && av !== "spotify") {
+      if (paused && mediaMode === "partybox") {
         const reason = STATE.now ? "PartyBox playback is paused. Resume to continue this selection." : "PartyBox playback is paused by Admin.";
         setPausedUi(true, reason);
         return;
@@ -328,7 +357,7 @@
     setInterval(tick, 3000);
     setInterval(() => {
       if (!STATE) return;
-      if ((STATE.av_mode || "").toLowerCase() !== "spotify") return;
+      if ((STATE.media_mode || "").toLowerCase() !== "spotify") return;
       renderSpotifyProgress();
     }, 250);
   </script>

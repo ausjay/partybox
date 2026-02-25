@@ -25,6 +25,19 @@
           <span id="top_mode_text">Mode: {{ media_mode|capitalize }}</span>
         </div>
 
+        <div class="pill" title="Playback status">
+          <span id="top_status_dot" class="dot {% if muted %}warn{% elif paused %}warn{% else %}ok{% endif %}"></span>
+          <span id="top_status_text">
+            {% if muted %}
+              Status: Muted
+            {% elif paused %}
+              Status: Paused
+            {% else %}
+              Status: Playing
+            {% endif %}
+          </span>
+        </div>
+
         <div id="top_lock_pill" class="pill" title="Requests lock" style="{% if not locked %}display:none;{% endif %}">
           <span id="top_lock_dot" class="dot bad"></span>
           <span id="top_lock_text"><b style="font-weight:800;">Requests Locked</b></span>
@@ -279,6 +292,7 @@
     muted: {{ "true" if muted else "false" }},
     av_mode: "{{ av_mode|e }}",
     media_mode: "{{ media_mode|e }}",
+    playback_mode: "{{ 'paused' if paused else 'playing' }}",
     media_mode_status: null
   };
   let PENDING_MEDIA_MODE = "";
@@ -292,7 +306,9 @@
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
         const msg = j.error || `HTTP ${r.status}`;
-        throw new Error(msg);
+        const err = new Error(msg);
+        err.payload = j;
+        throw err;
       }
       return j;
     });
@@ -317,18 +333,17 @@
     btn.textContent = locked ? "Unlock Requests" : "Lock Requests";
   }
 
-  function modeLabel(mediaMode, paused) {
+  function modeLabel(mediaMode) {
     const m = String(mediaMode || "partybox").toLowerCase();
     if (m === "spotify") return "Mode: Spotify";
     if (m === "airplay") return "Mode: AirPlay";
     if (m === "bluetooth") return "Mode: Bluetooth";
     if (m === "tv") return "Mode: TV";
     if (m === "mute") return "Mode: Mute";
-    if (paused) return "Mode: PartyBox • Paused";
     return "Mode: PartyBox";
   }
 
-  function setTopMode(mediaMode, paused) {
+  function setTopMode(mediaMode) {
     const dot = document.getElementById("top_mode_dot");
     const txt = document.getElementById("top_mode_text");
     dot.classList.remove("ok","warn","bad");
@@ -336,12 +351,51 @@
     const m = String(mediaMode || "partybox").toLowerCase();
     if (m === "mute") {
       dot.classList.add("warn");
-    } else if (m === "partybox" && paused) {
-      dot.classList.add("warn");
     } else {
       dot.classList.add("ok");
     }
-    txt.textContent = modeLabel(m, paused);
+    txt.textContent = modeLabel(m);
+  }
+
+  function playbackStatusLabel(mediaMode, playbackMode, paused, muted) {
+    const m = String(mediaMode || "partybox").toLowerCase();
+    const p = String(playbackMode || "").toLowerCase();
+    const isPaused = !!paused;
+    const isMuted = !!muted;
+
+    let base = "Idle";
+    if (m === "mute") {
+      base = "Muted";
+    } else if (m !== "partybox") {
+      base = `${modeLabel(m).replace("Mode: ", "")} Active`;
+    } else if (isPaused || p === "paused") {
+      base = "Paused";
+    } else if (p === "playing") {
+      base = "Playing";
+    } else if (p === "queue") {
+      base = "Queued";
+    }
+    if (isMuted && base !== "Muted") return `${base} • Muted`;
+    return base;
+  }
+
+  function setTopStatus(mediaMode, playbackMode, paused, muted) {
+    const dot = document.getElementById("top_status_dot");
+    const txt = document.getElementById("top_status_text");
+    if (!dot || !txt) return;
+    dot.classList.remove("ok", "warn", "bad");
+
+    const m = String(mediaMode || "partybox").toLowerCase();
+    const p = String(playbackMode || "").toLowerCase();
+    const isPaused = !!paused || p === "paused";
+    const isMuted = !!muted || m === "mute";
+
+    if (isMuted) dot.classList.add("warn");
+    else if (m !== "partybox" || p === "playing") dot.classList.add("ok");
+    else if (isPaused || p === "queue" || p === "empty") dot.classList.add("warn");
+    else dot.classList.add("ok");
+
+    txt.textContent = `Status: ${playbackStatusLabel(m, p, isPaused, isMuted)}`;
   }
 
   function setTopHealth(ok, summary) {
@@ -468,7 +522,9 @@
     const btn = document.getElementById("btn_pause_resume");
     btn.className = "btn " + (paused ? "primary" : "pink");
     btn.textContent = paused ? "Resume" : "Pause";
-    setTopMode(STATE.media_mode, paused);
+    const currentMode = effectiveMediaMode(STATE && STATE.media_mode_status);
+    setTopMode(currentMode);
+    setTopStatus(currentMode, STATE && STATE.playback_mode, paused, muted);
 
     // Update header badges
     const hint = document.getElementById("now_header_hint");
@@ -483,6 +539,8 @@
     const btn = document.getElementById("btn_mute");
     btn.className = "btn " + (muted ? "primary" : "ghost");
     btn.textContent = muted ? "Unmute" : "Mute";
+    const currentMode = effectiveMediaMode(STATE && STATE.media_mode_status);
+    setTopStatus(currentMode, STATE && STATE.playback_mode, STATE && STATE.paused, muted);
   }
 
   function playbackControlsEnabled(mediaMode) {
@@ -529,10 +587,11 @@
   function effectiveMediaMode(status) {
     const pending = String(PENDING_MEDIA_MODE || "").toLowerCase();
     if (pending) return pending;
+    const statusMode = String((status && status.mode) || "").toLowerCase();
+    if (statusMode) return statusMode;
     const stateMode = String((STATE && STATE.media_mode) || "").toLowerCase();
     if (stateMode) return stateMode;
-    const statusMode = String((status && status.mode) || "").toLowerCase();
-    return statusMode || "partybox";
+    return "partybox";
   }
 
   function renderMediaModeStatus(status) {
@@ -909,28 +968,37 @@
     PENDING_MEDIA_MODE = mode;
     setMediaModeButtonsEnabled(false);
     STATE.media_mode = mode;
-    setTopMode(mode, STATE.paused);
+    setTopMode(mode);
+    setTopStatus(mode, STATE.playback_mode, STATE.paused, STATE.muted);
     setPlaybackControlsEnabled(mode);
     renderMediaModeStatus(STATE.media_mode_status);
     setStatus(`Switching mode to ${mode}...`);
 
     post('/api/admin/media_mode', {mode})
       .then((j) => {
-        if (j && j.ok === false) throw new Error(j.error || "mode switch failed");
+        if (j && j.ok === false) {
+          const err = new Error(j.error || "mode switch failed");
+          err.payload = j;
+          throw err;
+        }
         PENDING_MEDIA_MODE = "";
         setMediaModeButtonsEnabled(true);
         STATE.media_mode = (j.mode || mode).toLowerCase();
         STATE.media_mode_status = j.status || null;
-        setTopMode(STATE.media_mode, STATE.paused);
+        setTopMode(STATE.media_mode);
+        setTopStatus(STATE.media_mode, STATE.playback_mode, STATE.paused, STATE.muted);
         renderMediaModeStatus(STATE.media_mode_status);
         setStatus(`Mode set: ${STATE.media_mode}`);
         pollState();
       })
       .catch(e => {
+        const payload = e && e.payload ? e.payload : null;
         PENDING_MEDIA_MODE = "";
         setMediaModeButtonsEnabled(true);
-        STATE.media_mode = prevMode;
-        setTopMode(STATE.media_mode, STATE.paused);
+        STATE.media_mode = String((payload && payload.mode) || prevMode || "partybox").toLowerCase();
+        if (payload && payload.status) STATE.media_mode_status = payload.status;
+        setTopMode(STATE.media_mode);
+        setTopStatus(STATE.media_mode, STATE.playback_mode, STATE.paused, STATE.muted);
         setPlaybackControlsEnabled(STATE.media_mode);
         renderMediaModeStatus(STATE.media_mode_status);
         setStatus('Error: ' + (e.message || 'unknown'));
@@ -959,6 +1027,7 @@
         muted: !!j.muted,
         av_mode: (j.av_mode || "partybox").toLowerCase(),
         media_mode: (j.media_mode || "partybox").toLowerCase(),
+        playback_mode: (j.mode || "empty").toLowerCase(),
         tv_qr_enabled: !!(j.tv_qr_enabled ?? true),
         now: j.now || null,
         spotify: j.spotify || null,
@@ -970,8 +1039,10 @@
       }
 
       setTopLock(STATE.locked);
-      setTopMode(effectiveMediaMode(STATE.media_mode_status), STATE.paused);
-      setMediaModeButtons(effectiveMediaMode(STATE.media_mode_status));
+      const currentMode = effectiveMediaMode(STATE.media_mode_status);
+      setTopMode(currentMode);
+      setMediaModeButtons(currentMode);
+      setTopStatus(currentMode, STATE.playback_mode, STATE.paused, STATE.muted);
       setPlaybackControlsEnabled(STATE.media_mode);
       setMuted(STATE.muted);
       setPaused(STATE.paused, STATE.muted);
@@ -1005,6 +1076,9 @@
         setMediaModeButtonsEnabled(true);
       }
       renderMediaModeStatus(STATE.media_mode_status);
+      const currentMode = effectiveMediaMode(STATE.media_mode_status);
+      setTopMode(currentMode);
+      setTopStatus(currentMode, STATE.playback_mode, STATE.paused, STATE.muted);
     } catch (e) {
       // ignore transient
     }

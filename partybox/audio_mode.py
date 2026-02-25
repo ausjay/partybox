@@ -35,6 +35,11 @@ MODE_START_SERVICES = {
     "mute": (),
 }
 
+AIRPLAY_START_CANDIDATES = (
+    "partybox-airplay.service",
+    "shairport-sync.service",
+)
+
 
 def _log(msg: str) -> None:
     print(f"[audio_mode] {msg}", flush=True)
@@ -204,6 +209,53 @@ class AudioModeManager:
             out[unit] = {"active": bool(st["ok"]), "status": st["status"], "stderr": st["stderr"]}
         return out
 
+    def _wait_for_service_active(self, unit: str, timeout: float = 8.0, poll_interval: float = 0.25) -> Dict[str, Any]:
+        poll = max(0.1, float(poll_interval))
+        checks = max(1, int(float(timeout) / poll))
+        last: Dict[str, Any] = {"ok": False, "status": "unknown", "stderr": ""}
+        for i in range(checks):
+            st = self._systemctl_is_active(unit)
+            last = st
+            if bool(st.get("ok")):
+                return st
+            status = str(st.get("status") or "").strip().lower()
+            # Failed generally means process crashed; no need to continue waiting.
+            if status == "failed":
+                return st
+            if i < (checks - 1):
+                time.sleep(poll)
+        return last
+
+    def _start_airplay_service(self, actions: List[Dict[str, Any]]) -> str:
+        errors: List[str] = []
+        for unit in AIRPLAY_START_CANDIDATES:
+            r = self._systemctl("start", unit, tolerate_missing=True)
+            r["action"] = "systemctl_start"
+            r["unit"] = unit
+            actions.append(r)
+
+            if r.get("ignored"):
+                errors.append(f"{unit}: missing")
+                continue
+            if not r.get("ok"):
+                err = str(r.get("stderr") or r.get("stdout") or "start failed")
+                errors.append(f"{unit}: {err}")
+                continue
+
+            st = self._wait_for_service_active(unit, timeout=10.0, poll_interval=0.3)
+            actions.append({"action": "systemctl_verify_active", "unit": unit, **st})
+            if st.get("ok"):
+                return unit
+
+            status = str(st.get("status") or "unknown")
+            errors.append(f"{unit}: not active after start ({status})")
+            stop_r = self._systemctl("stop", unit, tolerate_missing=True)
+            stop_r["action"] = "systemctl_stop"
+            stop_r["unit"] = unit
+            actions.append(stop_r)
+
+        raise RuntimeError(f"failed to start AirPlay service ({'; '.join(errors)})")
+
     def _apply_mode(
         self,
         mode: str,
@@ -247,13 +299,18 @@ class AudioModeManager:
         else:
             actions.append({"action": "sink_mute", **self._set_sink_mute(False)})
 
-        for unit in start_units:
-            r = self._systemctl("start", unit, tolerate_missing=False)
-            r["action"] = "systemctl_start"
-            r["unit"] = unit
-            actions.append(r)
-            if not r.get("ok"):
-                raise RuntimeError(f"failed to start {unit}: {r.get('stderr') or r.get('stdout')}")
+        verified_units: List[str] = []
+        if mode == "airplay":
+            verified_units = [self._start_airplay_service(actions)]
+        else:
+            for unit in start_units:
+                r = self._systemctl("start", unit, tolerate_missing=False)
+                r["action"] = "systemctl_start"
+                r["unit"] = unit
+                actions.append(r)
+                if not r.get("ok"):
+                    raise RuntimeError(f"failed to start {unit}: {r.get('stderr') or r.get('stdout')}")
+                verified_units.append(unit)
 
         if mode == "bluetooth":
             bt_steps = [
@@ -268,11 +325,12 @@ class AudioModeManager:
                 r["args"] = " ".join(bt_args)
                 actions.append(r)
 
-        for unit in start_units:
-            st = self._systemctl_is_active(unit)
-            actions.append({"action": "systemctl_verify_active", "unit": unit, **st})
-            if not st.get("ok"):
-                raise RuntimeError(f"{unit} is not active after start ({st.get('status')})")
+        if mode != "airplay":
+            for unit in verified_units:
+                st = self._wait_for_service_active(unit, timeout=8.0, poll_interval=0.25)
+                actions.append({"action": "systemctl_verify_active", "unit": unit, **st})
+                if not st.get("ok"):
+                    raise RuntimeError(f"{unit} is not active after start ({st.get('status')})")
 
     def get_media_mode_status(self, refresh: bool = False) -> Dict[str, Any]:
         now = time.time()
@@ -361,13 +419,18 @@ class AudioModeManager:
         else:
             actions.append({"action": "sink_mute", **self._set_sink_mute(False)})
 
-        for unit in start_units:
-            r = self._systemctl("start", unit, tolerate_missing=False)
-            r["action"] = "systemctl_start"
-            r["unit"] = unit
-            actions.append(r)
-            if not r.get("ok"):
-                raise RuntimeError(f"failed to start {unit}: {r.get('stderr') or r.get('stdout')}")
+        verified_units: List[str] = []
+        if mode == "airplay":
+            verified_units = [self._start_airplay_service(actions)]
+        else:
+            for unit in start_units:
+                r = self._systemctl("start", unit, tolerate_missing=False)
+                r["action"] = "systemctl_start"
+                r["unit"] = unit
+                actions.append(r)
+                if not r.get("ok"):
+                    raise RuntimeError(f"failed to start {unit}: {r.get('stderr') or r.get('stdout')}")
+                verified_units.append(unit)
 
         if mode == "bluetooth":
             bt_steps = [
@@ -382,11 +445,12 @@ class AudioModeManager:
                 r["args"] = " ".join(bt_args)
                 actions.append(r)
 
-        for unit in start_units:
-            st = self._systemctl_is_active(unit)
-            actions.append({"action": "systemctl_verify_active", "unit": unit, **st})
-            if not st.get("ok"):
-                raise RuntimeError(f"{unit} is not active after start ({st.get('status')})")
+        if mode != "airplay":
+            for unit in verified_units:
+                st = self._wait_for_service_active(unit, timeout=8.0, poll_interval=0.25)
+                actions.append({"action": "systemctl_verify_active", "unit": unit, **st})
+                if not st.get("ok"):
+                    raise RuntimeError(f"{unit} is not active after start ({st.get('status')})")
 
     def set_media_mode(
         self,

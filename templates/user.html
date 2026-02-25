@@ -24,6 +24,10 @@
             <span class="dot" id="mode_dot"></span>
             <span id="mode_text">Mode: —</span>
           </div>
+          <div class="pill" title="Playback status">
+            <span class="dot" id="status_dot"></span>
+            <span id="status_text">Status: —</span>
+          </div>
           <div id="lock_pill" class="pill" title="Requests lock" style="display:none;">
             <span id="lock_dot" class="dot bad"></span>
             <span id="lock_text">Requests Locked</span>
@@ -126,9 +130,8 @@
       {% endfor %}
     ];
 
-    // Server-provided initial lock + av_mode (will be overwritten by /api/state polling)
-    let LOCKED = {{ "true" if locked else "false" }};
-    let AV_MODE = {{ (av_mode or "partybox")|tojson }};
+    // Server-provided initial lock + mode (will be overwritten by /api/state polling)
+    let MEDIA_MODE = {{ (media_mode or "partybox")|tojson }};
 
     // UI state
     let STATE = null;
@@ -136,6 +139,10 @@
     const UP_NEXT_LIMIT = 5;
 
     const el = (id) => document.getElementById(id);
+
+    function currentMediaMode() {
+      return (STATE?.media_mode || MEDIA_MODE || "partybox").toLowerCase();
+    }
 
     function showToast(msg, kind="ok", ms=1800) {
       const t = el("toast");
@@ -149,7 +156,7 @@
     function isDisabledForRequests() {
       if (!STATE) return false;
       if (STATE.locked) return true;
-      if ((STATE.av_mode || "").toLowerCase() === "spotify") return true;
+      if (currentMediaMode() === "spotify") return true;
       return false;
     }
 
@@ -208,7 +215,7 @@
       // Keep paused informational only: allow queueing while paused.
       if (!STATE) return;
 
-      if ((STATE.av_mode || "").toLowerCase() === "spotify") {
+      if (currentMediaMode() === "spotify") {
         showToast("Spotify Mode — requests disabled", "warn");
         return;
       }
@@ -237,25 +244,55 @@
 
     function updateBanners() {
       if (!STATE) return;
-      el("spotify_banner").style.display = ((STATE.av_mode || "").toLowerCase() === "spotify") ? "block" : "none";
+      el("spotify_banner").style.display = (currentMediaMode() === "spotify") ? "block" : "none";
     }
 
     function updateTopPills() {
-      const av = (STATE?.av_mode || AV_MODE || "partybox").toLowerCase();
+      const mediaMode = currentMediaMode();
       const paused = !!(STATE && STATE.paused);
+      const muted = !!(STATE && STATE.muted);
+      const playbackMode = String((STATE && STATE.mode) || "").toLowerCase();
 
       const md = el("mode_dot");
       md.classList.remove("ok", "warn", "bad");
-      if (av === "spotify") {
-        md.classList.add("ok");
-        el("mode_text").textContent = "Mode: Spotify";
-      } else if (paused) {
+      if (mediaMode === "mute") {
         md.classList.add("warn");
-        el("mode_text").textContent = "Mode: PartyBox • Paused";
+        el("mode_text").textContent = "Mode: Mute";
       } else {
         md.classList.add("ok");
-        el("mode_text").textContent = "Mode: PartyBox";
+        if (mediaMode === "spotify") el("mode_text").textContent = "Mode: Spotify";
+        else if (mediaMode === "airplay") el("mode_text").textContent = "Mode: AirPlay";
+        else if (mediaMode === "bluetooth") el("mode_text").textContent = "Mode: Bluetooth";
+        else if (mediaMode === "tv") el("mode_text").textContent = "Mode: TV";
+        else el("mode_text").textContent = "Mode: PartyBox";
       }
+
+      const sd = el("status_dot");
+      const st = el("status_text");
+      sd.classList.remove("ok", "warn", "bad");
+      let statusLabel = "Idle";
+      if (mediaMode === "mute") {
+        statusLabel = "Muted";
+        sd.classList.add("warn");
+      } else if (mediaMode !== "partybox") {
+        statusLabel = `${el("mode_text").textContent.replace("Mode: ", "")} Active`;
+        sd.classList.add("ok");
+      } else if (paused || playbackMode === "paused") {
+        statusLabel = "Paused";
+        sd.classList.add("warn");
+      } else if (playbackMode === "playing") {
+        statusLabel = "Playing";
+        sd.classList.add("ok");
+      } else if (playbackMode === "queue") {
+        statusLabel = "Queued";
+        sd.classList.add("warn");
+      } else {
+        sd.classList.add("warn");
+      }
+      if (muted && statusLabel !== "Muted") {
+        statusLabel = `${statusLabel} • Muted`;
+      }
+      st.textContent = `Status: ${statusLabel}`;
 
       const locked = !!(STATE && STATE.locked);
       const lockPill = el("lock_pill");
@@ -268,10 +305,10 @@
     function updateNowPanel() {
       if (!STATE) return;
 
-      const av = (STATE.av_mode || AV_MODE || "partybox").toLowerCase();
+      const mediaMode = currentMediaMode();
       const now = STATE.now;
 
-      if (av === "spotify") {
+      if (mediaMode === "spotify") {
         el("queue_hint").textContent = "Queued for when PartyBox mode resumes";
 
         if (now && now.title) {
@@ -430,6 +467,7 @@
         const r = await fetch("/api/state", { cache: "no-store" });
         const j = await r.json();
         STATE = j;
+        MEDIA_MODE = String((j && j.media_mode) || MEDIA_MODE || "partybox").toLowerCase();
 
         updateBanners();
         updateTopPills();
@@ -469,7 +507,7 @@
     pollState();
     pollQueue();
 
-    setInterval(pollState, 30000);
+    setInterval(pollState, 5000);
     setInterval(pollQueue, 10000);
   </script>
 </body>
