@@ -114,13 +114,13 @@
                 {% if paused %}Resume{% else %}Pause{% endif %}
               </button>
 
-              <button class="btn ghost" onclick="skip()">Skip</button>
+              <button id="btn_skip" class="btn ghost" onclick="skip()">Skip</button>
 
               <button id="btn_mute" class="btn {% if muted %}primary{% else %}ghost{% endif %}" onclick="toggleMute()">
                 {% if muted %}Unmute{% else %}Mute{% endif %}
               </button>
 
-              <button class="btn danger btn-stop" onclick="tvStop()">Stop (pause + clear)</button>
+              <button id="btn_stop" class="btn danger btn-stop" onclick="tvStop()">Stop (pause + clear)</button>
             </div>
 
             <div style="height:12px;"></div>
@@ -492,6 +492,21 @@
     const btn = document.getElementById("btn_mute");
     btn.className = "btn " + (muted ? "primary" : "ghost");
     btn.textContent = muted ? "Unmute" : "Mute";
+  }
+
+  function playbackControlsEnabled(mediaMode) {
+    return String(mediaMode || "partybox").toLowerCase() === "partybox";
+  }
+
+  function setPlaybackControlsEnabled(mediaMode) {
+    const enabled = playbackControlsEnabled(mediaMode);
+    const reason = enabled ? "" : "Playback controls are only available in PartyBox mode.";
+    ["btn_pause_resume", "btn_skip", "btn_stop"].forEach((id) => {
+      const btn = document.getElementById(id);
+      if (!btn) return;
+      btn.disabled = !enabled;
+      btn.title = reason;
+    });
   }
 
   function setTvQrEnabled(enabled) {
@@ -894,6 +909,7 @@
     const prevMode = STATE.media_mode;
     STATE.media_mode = mode;
     setTopMode(mode, STATE.paused);
+    setPlaybackControlsEnabled(mode);
     renderMediaModeStatus(STATE.media_mode_status);
 
     post('/api/admin/media_mode', {mode})
@@ -908,6 +924,7 @@
       .catch(e => {
         STATE.media_mode = prevMode;
         setTopMode(STATE.media_mode, STATE.paused);
+        setPlaybackControlsEnabled(STATE.media_mode);
         renderMediaModeStatus(STATE.media_mode_status);
         setStatus('Error: ' + (e.message || 'unknown'));
         pollState();
@@ -944,6 +961,7 @@
       setTopLock(STATE.locked);
       setTopMode(STATE.media_mode, STATE.paused);
       setMediaModeButtons(STATE.media_mode);
+      setPlaybackControlsEnabled(STATE.media_mode);
       setMuted(STATE.muted);
       setPaused(STATE.paused, STATE.muted);
       setTvQrEnabled(STATE.tv_qr_enabled);
