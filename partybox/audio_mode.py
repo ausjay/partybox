@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shlex
+import signal
 import subprocess
 import time
 from typing import Any, Callable, Dict, List, Optional
@@ -51,17 +52,40 @@ class AudioModeManager:
         started = time.time()
         quoted = " ".join(shlex.quote(c) for c in cmd)
         try:
-            proc = subprocess.run(
+            proc = subprocess.Popen(
                 cmd,
-                check=False,
                 capture_output=True,
                 text=True,
-                timeout=max(1.0, float(timeout)),
+                start_new_session=True,
             )
-            out = (proc.stdout or "").strip()
-            err = (proc.stderr or "").strip()
+            try:
+                out_raw, err_raw = proc.communicate(timeout=max(1.0, float(timeout)))
+            except subprocess.TimeoutExpired:
+                # Kill whole process group so child processes do not leak when command hangs.
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except Exception:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+                try:
+                    out_raw, err_raw = proc.communicate(timeout=1.0)
+                except Exception:
+                    out_raw, err_raw = "", ""
+                return {
+                    "ok": False,
+                    "returncode": -1,
+                    "cmd": quoted,
+                    "stdout": str(out_raw or "").strip(),
+                    "stderr": f"command timed out after {timeout}s",
+                    "elapsed_ms": int((time.time() - started) * 1000),
+                }
+
+            out = (out_raw or "").strip()
+            err = (err_raw or "").strip()
             return {
-                "ok": proc.returncode == 0,
+                "ok": int(proc.returncode) == 0,
                 "returncode": int(proc.returncode),
                 "cmd": quoted,
                 "stdout": out,
@@ -181,6 +205,7 @@ class AudioModeManager:
     def _apply_mode(
         self,
         mode: str,
+        previous_mode: str,
         actions: List[Dict[str, Any]],
         stop_spotify_playback_cb: Optional[Callable[[], Dict[str, Any]]] = None,
     ) -> None:
@@ -206,7 +231,8 @@ class AudioModeManager:
             r["unit"] = unit
             actions.append(r)
 
-        if mode != "bluetooth":
+        # Only disable BT discoverable/pairable when actually leaving bluetooth mode.
+        if previous_mode == "bluetooth" and mode != "bluetooth":
             for bt_args in (("pairable", "off"), ("discoverable", "off")):
                 r = self._bluetoothctl_single(*bt_args)
                 r["action"] = "bluetoothctl"
@@ -310,6 +336,46 @@ class AudioModeManager:
             "status": self.get_media_mode_status(refresh=True),
         }
 
+    def _ensure_mode_active(
+        self,
+        mode: str,
+        actions: List[Dict[str, Any]],
+    ) -> None:
+        start_units = list(MODE_START_SERVICES.get(mode, ()))
+
+        if mode == "mute":
+            actions.append({"action": "sink_mute", **self._set_sink_mute(True)})
+            actions.append({"action": "sink_volume", **self._set_sink_volume(35)})
+        else:
+            actions.append({"action": "sink_mute", **self._set_sink_mute(False)})
+
+        for unit in start_units:
+            r = self._systemctl("start", unit, tolerate_missing=False)
+            r["action"] = "systemctl_start"
+            r["unit"] = unit
+            actions.append(r)
+            if not r.get("ok"):
+                raise RuntimeError(f"failed to start {unit}: {r.get('stderr') or r.get('stdout')}")
+
+        if mode == "bluetooth":
+            bt_steps = [
+                ("power", "on"),
+                ("pairable", "on"),
+                ("discoverable", "on"),
+                ("system-alias", self._bt_alias),
+            ]
+            for bt_args in bt_steps:
+                r = self._bluetoothctl_single(*bt_args)
+                r["action"] = "bluetoothctl"
+                r["args"] = " ".join(bt_args)
+                actions.append(r)
+
+        for unit in start_units:
+            st = self._systemctl_is_active(unit)
+            actions.append({"action": "systemctl_verify_active", "unit": unit, **st})
+            if not st.get("ok"):
+                raise RuntimeError(f"{unit} is not active after start ({st.get('status')})")
+
     def set_media_mode(
         self,
         mode: str,
@@ -328,11 +394,32 @@ class AudioModeManager:
             status["noop"] = True
             return {"ok": True, "mode": current, "status": status}
 
+        if current == target and force:
+            _log(f"set_media_mode ensure active: {target}")
+            actions: List[Dict[str, Any]] = []
+            self._persist_last_error("")
+            try:
+                self._ensure_mode_active(target, actions)
+                self._persist_mode(target)
+                self._persist_actions(actions)
+                self._persist_last_error("")
+                self._status_cache_ts = 0.0
+                status = self.get_media_mode_status(refresh=True)
+                status["ensured"] = True
+                return {"ok": True, "mode": target, "status": status}
+            except Exception as e:
+                err = str(e)
+                actions.append({"action": "ensure_error", "error": err})
+                self._persist_actions(actions)
+                self._persist_last_error(err)
+                self._status_cache_ts = 0.0
+                return {"ok": False, "error": err, "mode": self._current_mode(), "status": self.get_media_mode_status(refresh=True)}
+
         _log(f"switch media mode: {current} -> {target}")
         actions: List[Dict[str, Any]] = []
         self._persist_last_error("")
         try:
-            self._apply_mode(target, actions, stop_spotify_playback_cb=stop_spotify_playback_cb)
+            self._apply_mode(target, current, actions, stop_spotify_playback_cb=stop_spotify_playback_cb)
             self._persist_mode(target)
             self._persist_actions(actions)
             self._persist_last_error("")
@@ -346,7 +433,7 @@ class AudioModeManager:
             if target != "mute":
                 try:
                     _log("attempting fallback to mute mode")
-                    self._apply_mode("mute", actions, stop_spotify_playback_cb=None)
+                    self._apply_mode("mute", target, actions, stop_spotify_playback_cb=None)
                     self._persist_mode("mute")
                     fallback_ok = True
                 except Exception as e2:
