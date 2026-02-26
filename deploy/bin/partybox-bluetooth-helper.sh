@@ -28,9 +28,16 @@ start_mode() {
 }
 
 stop_mode() {
+  log "disconnecting active bluetooth devices"
+  while read -r _ dev _; do
+    [ -n "${dev:-}" ] || continue
+    bt disconnect "$dev" || true
+  done < <(bluetoothctl devices Connected 2>/dev/null || true)
+
   log "disabling discoverable and pairable"
   bt discoverable off || true
   bt pairable off || true
+  bt power off || true
 }
 
 status_mode() {

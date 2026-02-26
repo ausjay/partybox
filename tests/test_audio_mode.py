@@ -60,6 +60,45 @@ class TestAudioModeManager(unittest.TestCase):
         self.assertEqual(self.settings["av_mode"], "spotify")
         self.assertEqual(self.settings["tv_paused"], "1")
 
+    def test_switching_away_from_bluetooth_tears_down_bluetooth_stack(self) -> None:
+        self.settings["media_mode"] = "bluetooth"
+        mgr = self._manager()
+        mgr._set_sink_mute = mock.Mock(return_value={"ok": True})  # type: ignore[method-assign]
+
+        systemctl_calls = []
+
+        def fake_systemctl(action: str, unit: str, tolerate_missing: bool = True):
+            systemctl_calls.append((action, unit, tolerate_missing))
+            return {"ok": True, "stdout": "", "stderr": "", "returncode": 0}
+
+        mgr._systemctl = mock.Mock(side_effect=fake_systemctl)  # type: ignore[method-assign]
+        mgr._wait_for_service_active = mock.Mock(  # type: ignore[method-assign]
+            return_value={"ok": True, "status": "active", "stderr": ""}
+        )
+
+        bt_calls = []
+
+        def fake_bt(*args: str, timeout: float = 2.5):
+            bt_calls.append(args)
+            if args == ("devices", "Connected"):
+                return {
+                    "ok": True,
+                    "stdout": "Device B4:55:75:BA:A9:A1 Jphone",
+                    "stderr": "",
+                    "returncode": 0,
+                }
+            return {"ok": True, "stdout": "", "stderr": "", "returncode": 0}
+
+        mgr._bluetoothctl_single = mock.Mock(side_effect=fake_bt)  # type: ignore[method-assign]
+
+        out = mgr.set_media_mode("partybox")
+        self.assertTrue(out["ok"])
+        self.assertEqual(self.settings["media_mode"], "partybox")
+
+        self.assertIn(("disconnect", "B4:55:75:BA:A9:A1"), bt_calls)
+        self.assertIn(("power", "off"), bt_calls)
+        self.assertIn(("stop", "bluetooth.service", True), systemctl_calls)
+
 
 if __name__ == "__main__":
     unittest.main()

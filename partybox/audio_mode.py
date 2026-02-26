@@ -179,6 +179,39 @@ class AudioModeManager:
                 devices.append(parts[2].strip())
         return devices
 
+    def _bluetooth_connected_device_ids(self) -> List[str]:
+        result = self._bluetoothctl_single("devices", "Connected", timeout=1.5)
+        if not result.get("ok"):
+            return []
+        out = str(result.get("stdout") or "")
+        device_ids: List[str] = []
+        for line in out.splitlines():
+            line = line.strip()
+            if not line.startswith("Device "):
+                continue
+            parts = line.split(" ", 2)
+            if len(parts) >= 2 and parts[1].strip():
+                device_ids.append(parts[1].strip())
+        return device_ids
+
+    def _teardown_bluetooth(self, actions: List[Dict[str, Any]]) -> None:
+        for device_id in self._bluetooth_connected_device_ids():
+            r = self._bluetoothctl_single("disconnect", device_id, timeout=4.0)
+            r["action"] = "bluetoothctl"
+            r["args"] = f"disconnect {device_id}"
+            actions.append(r)
+
+        for bt_args in (("pairable", "off"), ("discoverable", "off"), ("power", "off")):
+            r = self._bluetoothctl_single(*bt_args)
+            r["action"] = "bluetoothctl"
+            r["args"] = " ".join(bt_args)
+            actions.append(r)
+
+        r = self._systemctl("stop", "bluetooth.service", tolerate_missing=True)
+        r["action"] = "systemctl_stop"
+        r["unit"] = "bluetooth.service"
+        actions.append(r)
+
     def _current_mode(self) -> str:
         raw = (DB.get_setting(SETTING_MEDIA_MODE, "") or "").strip().lower()
         if raw in VALID_MEDIA_MODE_SET:
@@ -299,13 +332,9 @@ class AudioModeManager:
             r["unit"] = unit
             actions.append(r)
 
-        # Only disable BT discoverable/pairable when actually leaving bluetooth mode.
-        if previous_mode == "bluetooth" and mode != "bluetooth":
-            for bt_args in (("pairable", "off"), ("discoverable", "off")):
-                r = self._bluetoothctl_single(*bt_args)
-                r["action"] = "bluetoothctl"
-                r["args"] = " ".join(bt_args)
-                actions.append(r)
+        # Leaving bluetooth mode must fully tear down the BT audio path.
+        if mode != "bluetooth":
+            self._teardown_bluetooth(actions)
 
         if mode == "mute":
             actions.append({"action": "sink_mute", **self._set_sink_mute(True)})
@@ -426,6 +455,9 @@ class AudioModeManager:
             r["action"] = "systemctl_stop"
             r["unit"] = unit
             actions.append(r)
+
+        if mode != "bluetooth":
+            self._teardown_bluetooth(actions)
 
         if mode == "mute":
             actions.append({"action": "sink_mute", **self._set_sink_mute(True)})

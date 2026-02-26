@@ -10,6 +10,8 @@ import urllib.parse
 import urllib.request
 from typing import Any, Dict, Optional, Tuple
 
+from . import metrics as METRICS
+
 
 class SpotifyClient:
     TOKEN_URL = "https://accounts.spotify.com/api/token"
@@ -202,6 +204,12 @@ class SpotifyClient:
             flush=True,
         )
 
+    def _observe_api_metrics(self, endpoint: str, status: int, retry_after: int) -> None:
+        METRICS.observe_spotify_api_request(endpoint, status)
+        if status == 429:
+            METRICS.observe_spotify_rate_limited()
+            METRICS.set_spotify_last_rate_limit_retry_after_seconds(retry_after)
+
     def _refresh_access_token(self) -> Tuple[bool, str]:
         if not self.enabled:
             return False, "spotify_not_configured"
@@ -225,6 +233,7 @@ class SpotifyClient:
             },
             data=body,
         )
+        self._observe_api_metrics("/api/token", status, 0)
         if status != 200 or not payload:
             if payload:
                 detail = str(payload.get("error_description") or payload.get("error") or "").strip()
@@ -285,6 +294,7 @@ class SpotifyClient:
             retry_after = self._enter_cooldown(retry_after)
             req_err = self._cooldown_reason
 
+        self._observe_api_metrics(path, status, retry_after)
         self._log_http_call(path, status, retry_after, cached=False)
 
         if status == 401 and retry_401:
@@ -303,6 +313,7 @@ class SpotifyClient:
             if status == 429:
                 retry_after = self._enter_cooldown(retry_after)
                 req_err = self._cooldown_reason
+            self._observe_api_metrics(path, status, retry_after)
             self._log_http_call(path, status, retry_after, cached=False)
 
         return status, payload, req_err

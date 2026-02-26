@@ -19,10 +19,12 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlparse
 
-from flask import Flask, abort, jsonify, redirect, render_template, request, send_from_directory, url_for
+from flask import Flask, Response, abort, g, jsonify, redirect, render_template, request, send_from_directory, url_for
 
 from . import db as DB
 from .audio_mode import AudioModeManager, VALID_MEDIA_MODE_SET
+from . import metrics as METRICS
+from .metrics import CONTENT_TYPE_LATEST
 from .spotify_client import SpotifyClient
 
 YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,}$")
@@ -718,6 +720,7 @@ def create_app() -> Flask:
         try:
             r = _sync_local_media()
             print(f"[partybox] media auto-scan ok: seen={r['seen_mp4']} added={r['added']} dir={r['media_dir']}")
+            METRICS.set_queue_depth(DB.queue_depth())
         except Exception as e:
             print(f"[partybox] media auto-scan FAILED: {e}")
 
@@ -736,8 +739,52 @@ def create_app() -> Flask:
         legacy_av = (DB.get_setting("av_mode", "partybox") or "partybox").strip().lower()
         return "spotify" if legacy_av == "spotify" else "partybox"
 
+    def _route_label() -> str:
+        if request.url_rule is not None and request.url_rule.rule:
+            return str(request.url_rule.rule)
+        if request.endpoint:
+            return f"endpoint:{request.endpoint}"
+        return "unknown"
+
+    def _update_mode_metric(mode: Optional[str] = None) -> None:
+        try:
+            METRICS.set_mode(mode or _current_media_mode())
+        except Exception:
+            pass
+
+    def _update_queue_depth_metric() -> None:
+        try:
+            METRICS.set_queue_depth(DB.queue_depth())
+        except Exception:
+            pass
+
+    def _update_spotify_metrics(state: Dict[str, Any]) -> None:
+        payload = state if isinstance(state, dict) else {}
+        METRICS.set_spotify_ok(bool(payload.get("ok")))
+        device = payload.get("device") if isinstance(payload.get("device"), dict) else {}
+        visible = bool((device.get("id") or "").strip() or (device.get("name") or "").strip())
+        METRICS.set_spotify_device_visible(visible)
+        if str(payload.get("state") or "") != "cooldown":
+            METRICS.set_spotify_last_rate_limit_retry_after_seconds(0)
+
+    def _update_tv_ok_metric() -> None:
+        try:
+            hb_max_age = int(os.getenv("PARTYBOX_HEALTH_TV_HEARTBEAT_MAX_AGE_SECONDS", "20"))
+            hb = _tv_heartbeat_check(max_age_seconds=hb_max_age)
+            METRICS.set_tv_ok(bool(hb.get("ok")))
+        except Exception:
+            METRICS.set_tv_ok(False)
+
+    def _refresh_runtime_metrics() -> None:
+        _update_mode_metric()
+        _update_queue_depth_metric()
+        _update_tv_ok_metric()
+        METRICS.update_uptime()
+
     def _spotify_snapshot(force: bool = False, allow_fetch: bool = True) -> Dict[str, Any]:
-        return spotify_client.get_state(force=force, allow_fetch=allow_fetch)
+        payload = spotify_client.get_state(force=force, allow_fetch=allow_fetch)
+        _update_spotify_metrics(payload)
+        return payload
 
     def _spotify_inactive_payload(note: str = "Spotify connected elsewhere.") -> Dict[str, Any]:
         return {
@@ -910,6 +957,28 @@ def create_app() -> Flask:
     except Exception as e:
         print(f"[partybox] startup media mode apply exception: {e}", flush=True)
 
+    _refresh_runtime_metrics()
+
+    @app.before_request
+    def _metrics_before_request() -> None:
+        g._partybox_req_started = time.perf_counter()
+        g._partybox_route = _route_label()
+
+    @app.after_request
+    def _metrics_after_request(response: Response) -> Response:
+        started = float(getattr(g, "_partybox_req_started", time.perf_counter()))
+        route = str(getattr(g, "_partybox_route", _route_label()))
+        duration = max(0.0, time.perf_counter() - started)
+        METRICS.observe_http_request(request.method, route, int(response.status_code), duration)
+        return response
+
+    @app.teardown_request
+    def _metrics_teardown_request(exc: Optional[BaseException]) -> None:
+        if exc is None:
+            return
+        route = str(getattr(g, "_partybox_route", "unknown"))
+        METRICS.observe_http_exception(route, exc.__class__.__name__)
+
     # ---------- Pages ----------
     @app.get("/")
     def index():
@@ -918,6 +987,42 @@ def create_app() -> Flask:
     @app.get("/health")
     def health():
         return jsonify({"ok": True, "ts": int(time.time())})
+
+    @app.get("/healthz")
+    def healthz():
+        return jsonify({"ok": True, "ts": int(time.time())})
+
+    @app.get("/readyz")
+    def readyz():
+        db_ok = True
+        db_error = ""
+        fatal_raw = ""
+        try:
+            DB.get_setting("admin_key", "JBOX")
+            fatal_raw = (DB.get_setting("fatal_error", "") or "").strip()
+        except Exception as e:
+            db_ok = False
+            db_error = str(e)
+
+        fatal_state = bool(fatal_raw)
+        ok = bool(db_ok and not fatal_state)
+
+        payload: Dict[str, Any] = {
+            "ok": ok,
+            "db_ok": db_ok,
+            "fatal_state": fatal_state,
+            "ts": int(time.time()),
+        }
+        if db_error:
+            payload["db_error"] = db_error
+        if fatal_state:
+            payload["fatal_error"] = "fatal_error set"
+        return jsonify(payload), (200 if ok else 503)
+
+    @app.get("/metrics")
+    def metrics():
+        _refresh_runtime_metrics()
+        return Response(METRICS.render_metrics(), content_type=CONTENT_TYPE_LATEST)
 
     @app.get("/tv")
     def tv():
@@ -1114,8 +1219,11 @@ def create_app() -> Flask:
             # Reuse settings table if you have it (k/v text)
             # If your db helper is different, change these 2 lines only.
             DB.set_setting("tv_heartbeat_json", json.dumps(payload))
+            METRICS.set_tv_ok(True)
             return jsonify({"ok": True})
         except Exception as e:
+            METRICS.inc_tv_error("heartbeat")
+            METRICS.set_tv_ok(False)
             return jsonify({"ok": False, "error": str(e)}), 400
 
     @app.post("/api/tv/mark_playing")
@@ -1123,8 +1231,12 @@ def create_app() -> Flask:
         data = request.get_json(force=True, silent=True) or {}
         qid = int(data.get("queue_id", 0))
         if qid <= 0:
+            METRICS.inc_tv_error("bad_queue_id")
             return jsonify({"ok": False, "error": "bad queue_id"}), 400
         DB.mark_playing(qid)
+        METRICS.inc_tv_command("mark_playing")
+        METRICS.inc_queue_play()
+        _update_queue_depth_metric()
         return jsonify({"ok": True})
 
     @app.post("/api/tv/mark_done")
@@ -1132,8 +1244,11 @@ def create_app() -> Flask:
         data = request.get_json(force=True, silent=True) or {}
         qid = int(data.get("queue_id", 0))
         if qid <= 0:
+            METRICS.inc_tv_error("bad_queue_id")
             return jsonify({"ok": False, "error": "bad queue_id"}), 400
         DB.mark_done(qid)
+        METRICS.inc_tv_command("mark_done")
+        _update_queue_depth_metric()
         return jsonify({"ok": True})
 
     @app.post("/api/request_video")
@@ -1153,6 +1268,8 @@ def create_app() -> Flask:
             return jsonify({"ok": False, "error": "bad catalog_id"}), 400
 
         qid = DB.enqueue(catalog_id, note_text=note_text[:120] if note_text else None)
+        METRICS.inc_queue_add("user_request")
+        _update_queue_depth_metric()
         return jsonify({"ok": True, "queue_id": qid})
 
     @app.get("/spotify/auth")
@@ -1241,6 +1358,7 @@ def create_app() -> Flask:
     def api_admin_media_scan():
         _admin_or_403()
         result = _sync_local_media()
+        _update_queue_depth_metric()
         return jsonify({"ok": True, **result})
 
     @app.post("/api/admin/av_mode")
@@ -1256,6 +1374,7 @@ def create_app() -> Flask:
             mode,
             stop_spotify_playback_cb=_try_pause_spotify_playback_cached_token,
         )
+        _update_mode_metric(str(result.get("mode") or ""))
         status_code = 200 if bool(result.get("ok")) else 500
         return jsonify(result), status_code
 
@@ -1272,6 +1391,7 @@ def create_app() -> Flask:
             mode,
             stop_spotify_playback_cb=_try_pause_spotify_playback_cached_token,
         )
+        _update_mode_metric(str(result.get("mode") or ""))
         status_code = 200 if bool(result.get("ok")) else 500
         return jsonify(result), status_code
 
@@ -1291,6 +1411,7 @@ def create_app() -> Flask:
     @app.get("/api/tv/status")
     def api_tv_status():
         try:
+            _update_tv_ok_metric()
             raw = DB.get_setting("tv_heartbeat_json") or ""
             hb_status = json.loads(raw) if raw else None
             media_mode = _current_media_mode()
@@ -1353,6 +1474,8 @@ def create_app() -> Flask:
                 }
             )
         except Exception as e:
+            METRICS.inc_tv_error("status_exception")
+            METRICS.set_tv_ok(False)
             return jsonify({"ok": False, "error": str(e)}), 500
 
 
@@ -1458,12 +1581,16 @@ def create_app() -> Flask:
     def api_admin_skip():
         _admin_or_403()
         skipped = DB.skip_current_or_next()
+        METRICS.inc_tv_command("skip")
+        _update_queue_depth_metric()
         return jsonify({"ok": True, "skipped": skipped})
 
     @app.post("/api/admin/clear_queue")
     def api_admin_clear_queue():
         _admin_or_403()
         DB.clear_queue()
+        METRICS.inc_tv_command("clear_queue")
+        _update_queue_depth_metric()
         return jsonify({"ok": True})
 
     @app.post("/api/admin/queue_remove")
@@ -1473,8 +1600,11 @@ def create_app() -> Flask:
         data = request.get_json(force=True, silent=True) or {}
         qid = int(data.get("queue_id", 0))
         if qid <= 0:
+            METRICS.inc_tv_error("bad_queue_id")
             return jsonify({"ok": False, "error": "bad queue_id"}), 400
         DB.remove_from_queue(qid)
+        METRICS.inc_tv_command("queue_remove")
+        _update_queue_depth_metric()
         return jsonify({"ok": True})
 
     @app.post("/api/admin/queue_promote")
@@ -1484,20 +1614,25 @@ def create_app() -> Flask:
         data = request.get_json(force=True, silent=True) or {}
         qid = int(data.get("queue_id", 0))
         if qid <= 0:
+            METRICS.inc_tv_error("bad_queue_id")
             return jsonify({"ok": False, "error": "bad queue_id"}), 400
         DB.promote_queue(qid)
+        METRICS.inc_tv_command("queue_promote")
+        _update_queue_depth_metric()
         return jsonify({"ok": True})
 
     @app.post("/api/admin/tv_pause")
     def api_admin_tv_pause():
         _admin_or_403()
         DB.set_setting("tv_paused", "1")
+        METRICS.inc_tv_command("pause")
         return jsonify({"ok": True})
 
     @app.post("/api/admin/tv_resume")
     def api_admin_tv_resume():
         _admin_or_403()
         DB.set_setting("tv_paused", "0")
+        METRICS.inc_tv_command("resume")
         return jsonify({"ok": True})
 
     @app.post("/api/admin/tv_stop")
@@ -1508,18 +1643,22 @@ def create_app() -> Flask:
         _admin_or_403()
         DB.set_setting("tv_paused", "1")
         DB.clear_queue()
+        METRICS.inc_tv_command("stop")
+        _update_queue_depth_metric()
         return jsonify({"ok": True})
 
     @app.post("/api/admin/tv_mute")
     def api_admin_tv_mute():
         _admin_or_403()
         DB.set_setting("tv_muted", "1")
+        METRICS.inc_tv_command("mute")
         return jsonify({"ok": True})
 
     @app.post("/api/admin/tv_unmute")
     def api_admin_tv_unmute():
         _admin_or_403()
         DB.set_setting("tv_muted", "0")
+        METRICS.inc_tv_command("unmute")
         return jsonify({"ok": True})
 
     return app

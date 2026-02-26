@@ -215,6 +215,15 @@ def list_queue(limit: int = 50) -> List[Dict[str, Any]]:
         ).fetchall()
         return [dict(r) for r in rows]
 
+
+def queue_depth() -> int:
+    with _connect() as conn:
+        r = conn.execute(
+            "SELECT COUNT(*) AS c FROM queue WHERE status IN ('queued','playing')"
+        ).fetchone()
+        return int(r["c"] or 0) if r else 0
+
+
 def normalize_queue_positions() -> None:
     """
     Ensure queue.pos is a clean 1..N sequence (stable ordering by pos,id).
