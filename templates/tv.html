@@ -21,8 +21,8 @@
     </div>
   </div>
 
-  <!-- Top-left status pills -->
-  <div id="tv_top_pills" style="position: fixed; left: 16px; top: 16px; display:flex; gap:10px; align-items:center; z-index: 50;">
+  <!-- Top-right status pills -->
+  <div id="tv_top_pills" class="tvTopPills">
     <div class="pill">
       <span id="tv_dot" class="dot warn"></span>
       <span id="mode_label">Mode: PartyBox</span>
@@ -31,11 +31,6 @@
       <span id="tv_status_dot" class="dot warn"></span>
       <span id="tv_status_label">Status: Idle</span>
     </div>
-  </div>
-
-  <div id="tv_spotify_banner" class="tvSpotifyBanner hidden" aria-live="polite">
-    <span class="dot ok"></span>
-    <span id="tv_spotify_banner_text">Spotify Mode Active • Video requests are disabled</span>
   </div>
 
   <div id="tv_spotify_panel" class="tvSpotifyPanel hidden" aria-live="polite">
@@ -69,6 +64,13 @@
       <div class="paused-reason" id="paused_reason">Admin paused playback</div>
     </div>
     <span class="badge paused">Paused</span>
+  </div>
+  <div id="tv_mode_banner" class="tvModeBanner hidden" aria-live="polite">
+    <img id="tv_mode_banner_icon" class="tvModeBannerIcon" src="" alt="" />
+    <div class="tvModeBannerLeft">
+      <div id="tv_mode_banner_kicker" class="tvModeBannerKicker">TV Mode Active</div>
+      <div id="tv_mode_banner_text" class="tvModeBannerText">PartyBox playback is paused while TV mode is active.</div>
+    </div>
   </div>
 
   <script src="/static/qrcode.min.js"></script>
@@ -121,13 +123,12 @@
       QR_READY = true;
     }
 
-    function setModePill(mode, tvOnline, mediaMode) {
+    function setModePill(mode, mediaMode) {
       const dot = el("tv_dot");
       dot.classList.remove("ok","warn","bad");
 
       const mm = String(mediaMode || "partybox").toLowerCase();
-      if (!tvOnline) dot.classList.add("bad");
-      else if (mm === "mute") dot.classList.add("warn");
+      if (mm === "mute") dot.classList.add("warn");
       else dot.classList.add("ok");
 
       let label = "Mode: PartyBox";
@@ -165,7 +166,9 @@
       }
 
       if (isMuted && statusText !== "Muted") statusText = `${statusText} • Muted`;
-      if (isMuted || isPaused || playbackMode === "queue" || playbackMode === "empty") dot.classList.add("warn");
+      if (isMuted) dot.classList.add("warn");
+      else if (mm !== "partybox" || playbackMode === "playing") dot.classList.add("ok");
+      else if (isPaused || playbackMode === "queue" || playbackMode === "empty") dot.classList.add("warn");
       else dot.classList.add("ok");
       label.textContent = `Status: ${statusText}`;
     }
@@ -179,6 +182,52 @@
       overlay.classList.toggle("show", !!show);
       bar.classList.toggle("show", !!show);
       document.body.classList.toggle("is-paused", !!show);
+    }
+
+    function setModeBanner(mediaMode) {
+      const banner = el("tv_mode_banner");
+      if (!banner) return;
+      const icon = el("tv_mode_banner_icon");
+      const kicker = el("tv_mode_banner_kicker");
+      const text = el("tv_mode_banner_text");
+      const mm = String(mediaMode || "partybox").toLowerCase();
+
+      let next = null;
+      if (mm === "tv") {
+        next = {
+          kicker: "TV Mode Active",
+          text: "PartyBox queue playback is paused while TV audio mode is active.",
+          icon: "/static/mode_tv.jpg",
+          iconAlt: "TV mode",
+        };
+      } else if (mm === "bluetooth") {
+        next = {
+          kicker: "Bluetooth Mode Active",
+          text: "Stream audio to \"PartyBox BT\" from your phone or laptop.",
+          icon: "/static/mode_bluetooth.png",
+          iconAlt: "Bluetooth mode",
+        };
+      } else if (mm === "airplay") {
+        next = {
+          kicker: "AirPlay Mode Active",
+          text: "AirPlay receiver is ready. Cast audio to \"PartyBox\".",
+          icon: "/static/mode_airplay.png",
+          iconAlt: "AirPlay mode",
+        };
+      }
+
+      if (!next) {
+        banner.classList.add("hidden");
+        return;
+      }
+
+      if (icon) {
+        icon.src = next.icon || "";
+        icon.alt = next.iconAlt || "";
+      }
+      kicker.textContent = next.kicker;
+      text.textContent = next.text;
+      banner.classList.remove("hidden");
     }
 
     function fmtMs(ms) {
@@ -239,8 +288,6 @@
     }
 
     function updateSpotifyUi(mediaMode) {
-      const banner = el("tv_spotify_banner");
-      const bannerText = el("tv_spotify_banner_text");
       const panel = el("tv_spotify_panel");
 
       const s = STATE && STATE.spotify ? STATE.spotify : null;
@@ -252,11 +299,7 @@
         (s.error || "")
       ));
       const active = !!(s && ((s.state === "playing" || s.state === "paused") || hasTrack || hasMeta));
-      const acctName = s && s.account && s.account.display_name ? s.account.display_name : "";
-      const acct = acctName ? ` • Spotify Account: ${acctName}` : "";
-
       if (String(mediaMode || "").toLowerCase() !== "spotify") {
-        banner.classList.add("hidden");
         panel.classList.add("hidden");
         document.body.classList.remove("spotify-mode");
         el("tv_top_pills").style.display = "flex";
@@ -265,8 +308,6 @@
 
       document.body.classList.add("spotify-mode");
       el("tv_top_pills").style.display = "flex";
-      bannerText.textContent = `Spotify Mode Active${acct}`;
-      banner.classList.remove("hidden");
       panel.classList.remove("hidden");
 
       const track = s.track || {};
@@ -304,7 +345,7 @@
       renderSpotifyProgress();
     }
 
-    function updateFromState(tvOnline) {
+    function updateFromState() {
       if (!STATE) return;
       ensureQr();
 
@@ -316,8 +357,9 @@
 
       updateSpotifyUi(mediaMode);
 
-      setModePill(mode, tvOnline, mediaMode);
+      setModePill(mode, mediaMode);
       setStatusPill(mode, mediaMode, paused, muted);
+      setModeBanner(mediaMode);
 
       const partyboxMode = mediaMode === "partybox";
       const idlePartybox = qrEnabled && partyboxMode && !paused && mode === "empty";
@@ -338,14 +380,11 @@
       try {
         const r = await fetch("/api/tv/status", { cache: "no-store" });
         const j = await r.json();
-        const st = (j && j.ok) ? j.status : null;
         STATE = (j && j.ok && j.state) ? j.state : null;
-        const now = Math.floor(Date.now() / 1000);
-        const online = !!(st && st.ts && (now - st.ts) <= 15);
-        updateFromState(online);
+        updateFromState();
       } catch (e) {
-        // if we can’t read tv/status, assume offline indicator but still show state info
-        updateFromState(false);
+        // if we can’t read tv/status, keep prior UI state
+        updateFromState();
       }
     }
 

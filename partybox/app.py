@@ -628,11 +628,13 @@ def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
 
     hb_max_age = int(os.getenv("PARTYBOX_HEALTH_TV_HEARTBEAT_MAX_AGE_SECONDS", "20"))
     hb = _tv_heartbeat_check(max_age_seconds=hb_max_age)
-    if av_mode == "spotify":
+    # tv_player heartbeat is only meaningful when PartyBox local playback is active.
+    # In tv/bluetooth/airplay/spotify/mute modes, partybox-player is intentionally paused/stopped.
+    if media_mode != "partybox":
         hb["optional"] = True
         hb["n_a"] = True
         hb["ok"] = True
-        hb["note"] = "n/a while Spotify backend is active"
+        hb["note"] = f"n/a while {media_mode} mode is active"
     checks["tv_player_heartbeat"] = hb
     # Legacy alias for older clients/scripts.
     checks["tv_heartbeat"] = hb
