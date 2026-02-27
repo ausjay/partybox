@@ -141,7 +141,7 @@
       el("mode_label").textContent = label;
     }
 
-    function setStatusPill(mode, mediaMode, paused, muted) {
+    function setStatusPill(mode, mediaMode, paused, muted, externalNow) {
       const dot = el("tv_status_dot");
       const label = el("tv_status_label");
       dot.classList.remove("ok", "warn", "bad");
@@ -150,10 +150,15 @@
       const playbackMode = String(mode || "").toLowerCase();
       const isPaused = !!paused || playbackMode === "paused";
       const isMuted = !!muted || mm === "mute";
+      const ext = (externalNow && typeof externalNow === "object") ? externalNow : {};
+      const btCur = (ext.bluetooth && typeof ext.bluetooth === "object") ? ext.bluetooth : {};
+      const btDevice = String(btCur.device_name || "").trim();
 
       let statusText = "Idle";
       if (mm === "mute") {
         statusText = "Muted";
+      } else if (mm === "bluetooth" && btDevice) {
+        statusText = `Bluetooth Active • ${btDevice}`;
       } else if (mm !== "partybox") {
         const pretty = String(el("mode_label").textContent || "Mode: PartyBox").replace("Mode: ", "");
         statusText = `${pretty} Active`;
@@ -184,16 +189,32 @@
       document.body.classList.toggle("is-paused", !!show);
     }
 
-    function setModeBanner(mediaMode) {
+    function setModeBanner(mediaMode, externalNow, playbackMode, paused, nowItem) {
       const banner = el("tv_mode_banner");
       if (!banner) return;
       const icon = el("tv_mode_banner_icon");
       const kicker = el("tv_mode_banner_kicker");
       const text = el("tv_mode_banner_text");
       const mm = String(mediaMode || "partybox").toLowerCase();
+      const pm = String(playbackMode || "").toLowerCase();
+      const isPaused = !!paused;
+      const now = (nowItem && typeof nowItem === "object") ? nowItem : {};
+      const ext = (externalNow && typeof externalNow === "object") ? externalNow : {};
+      const extCur = (ext[mm] && typeof ext[mm] === "object") ? ext[mm] : {};
 
       let next = null;
-      if (mm === "tv") {
+      if (mm === "partybox") {
+        const nowTitle = String(now.title || "").trim();
+        if ((pm === "playing" || isPaused) && nowTitle) {
+          const pbText = isPaused ? `Paused: ${nowTitle}` : nowTitle;
+          next = {
+            kicker: "PartyBox Now Playing",
+            text: pbText,
+            icon: "/static/Partybox_favicon.png",
+            iconAlt: "PartyBox mode",
+          };
+        }
+      } else if (mm === "tv") {
         next = {
           kicker: "TV Mode Active",
           text: "PartyBox queue playback is paused while TV audio mode is active.",
@@ -201,16 +222,39 @@
           iconAlt: "TV mode",
         };
       } else if (mm === "bluetooth") {
+        const btTitle = String(extCur.title || "").trim();
+        const btArtist = String(extCur.artist || "").trim();
+        const btDevice = String(extCur.device_name || "").trim();
+        const btActive = !!extCur.active;
+        const btMeta = !!extCur.metadata_available;
+        let btText = "Bluetooth receiver is ready. Stream audio to \"PartyBox BT\".";
+        if (btActive && btMeta && btTitle) {
+          btText = btArtist ? `${btTitle} — ${btArtist}` : btTitle;
+        } else if (btActive) {
+          btText = btDevice ? `Streaming from ${btDevice} (metadata unavailable)` : "Bluetooth audio active (metadata unavailable)";
+        } else if (btDevice) {
+          btText = `Connected: ${btDevice}. Start playback to stream audio.`;
+        }
         next = {
           kicker: "Bluetooth Mode Active",
-          text: "Stream audio to \"PartyBox BT\" from your phone or laptop.",
+          text: btText,
           icon: "/static/mode_bluetooth.png",
           iconAlt: "Bluetooth mode",
         };
       } else if (mm === "airplay") {
+        const apTitle = String(extCur.title || "").trim();
+        const apArtist = String(extCur.artist || "").trim();
+        const apActive = !!extCur.active;
+        const apMeta = !!extCur.metadata_available;
+        let apText = "AirPlay receiver is ready. Cast audio to \"PartyBox\".";
+        if (apActive && apMeta && apTitle) {
+          apText = apArtist ? `${apTitle} — ${apArtist}` : apTitle;
+        } else if (apActive) {
+          apText = "AirPlay audio active (metadata unavailable)";
+        }
         next = {
           kicker: "AirPlay Mode Active",
-          text: "AirPlay receiver is ready. Cast audio to \"PartyBox\".",
+          text: apText,
           icon: "/static/mode_airplay.png",
           iconAlt: "AirPlay mode",
         };
@@ -318,6 +362,9 @@
       const progress = Math.max(0, Math.min(Number(s.progress_ms) || 0, duration || Number(s.progress_ms) || 0));
       const err = (s && s.error) ? String(s.error) : "";
       const device = ((s && s.device && s.device.name) ? String(s.device.name) : "");
+      const uiState = (s && s.ui_state) ? String(s.ui_state).toLowerCase() : "";
+      const uiMessage = (s && s.ui_message) ? String(s.ui_message) : "";
+      const connectHint = (s && s.connect_hint) ? String(s.connect_hint) : "";
       const playbackLabel = (s && (s.state === "playing" || s.state === "paused"))
         ? String(s.state).charAt(0).toUpperCase() + String(s.state).slice(1)
         : "Waiting";
@@ -330,14 +377,23 @@
         String(duration || 0),
       ].join("|");
 
-      if (!active) {
-        el("tv_spotify_track").textContent = "Waiting for Spotify metadata";
-        el("tv_spotify_artist").textContent = err ? `Spotify API: ${err}` : "Start playback on PartyBox device";
-        el("tv_spotify_album").textContent = device ? `Device: ${device}` : playbackLabel;
-      } else {
+      if (uiState === "playing_on_partybox" && hasTrack) {
         el("tv_spotify_track").textContent = track.name || "Unknown track";
         el("tv_spotify_artist").textContent = artists || (err ? `Spotify API: ${err}` : "Unknown artist");
         el("tv_spotify_album").textContent = track.album || (device ? `Device: ${device}` : playbackLabel);
+      } else {
+        const waitingLine = uiMessage || (active ? "Waiting for Spotify Connect..." : "Waiting for Spotify metadata");
+        el("tv_spotify_track").textContent = waitingLine;
+        if (uiState === "playing_elsewhere" && device) {
+          el("tv_spotify_artist").textContent = `Current device: ${device}`;
+        } else if (uiState === "rate_limited") {
+          el("tv_spotify_artist").textContent = waitingLine;
+        } else {
+          el("tv_spotify_artist").textContent = connectHint || (err ? `Spotify API: ${err}` : "Start playback on PartyBox device");
+        }
+        el("tv_spotify_album").textContent = err && uiState !== "rate_limited"
+          ? `Spotify API: ${err}`
+          : (device ? `Device: ${device}` : playbackLabel);
       }
       el("tv_spotify_art").src = art;
       el("tv_spotify_art").style.visibility = art ? "visible" : "hidden";
@@ -354,12 +410,13 @@
       const muted = !!STATE.muted;
       const mode = (STATE.mode || "").toLowerCase();
       const qrEnabled = !!(STATE.tv_qr_enabled ?? true);
+      const externalNow = STATE.external_now_playing || {};
 
       updateSpotifyUi(mediaMode);
 
       setModePill(mode, mediaMode);
-      setStatusPill(mode, mediaMode, paused, muted);
-      setModeBanner(mediaMode);
+      setStatusPill(mode, mediaMode, paused, muted, externalNow);
+      setModeBanner(mediaMode, externalNow, mode, paused, STATE.now || null);
 
       const partyboxMode = mediaMode === "partybox";
       const idlePartybox = qrEnabled && partyboxMode && !paused && mode === "empty";

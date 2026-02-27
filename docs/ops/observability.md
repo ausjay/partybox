@@ -2,6 +2,9 @@
 
 PartyBox exposes a Prometheus metrics baseline directly from the Flask app.
 
+Detailed metric semantics (including top-25 track strategy and play counting rules) are in `docs/metrics.md`.
+Media-mode now-playing detection details are in `docs/observability_and_media_modes.md`.
+
 ## Endpoints
 
 - `GET /metrics`: Prometheus exposition format (`text/plain; version=0.0.4`)
@@ -31,6 +34,7 @@ Exactly one mode should be `1`.
 - `partybox_queue_depth`
 - `partybox_queue_add_total{source}`
 - `partybox_queue_play_total`
+- `partybox_play_history_events_total{mode}`
 
 ### Spotify
 
@@ -47,6 +51,12 @@ No tokens/secrets are emitted as labels or values.
 - `partybox_tv_ok`
 - `partybox_tv_commands_total{cmd}`
 - `partybox_tv_errors_total{type}`
+
+### AirPlay / Bluetooth
+
+- `partybox_external_stream_active{mode}`
+- `partybox_external_metadata_available{mode}`
+- `partybox_external_last_play_timestamp_seconds{mode}`
 
 ### Process
 

@@ -5,6 +5,7 @@ import os
 import re
 import json
 import time
+import hashlib
 import shlex
 import secrets
 import ssl
@@ -16,7 +17,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from flask import Flask, Response, abort, g, jsonify, redirect, render_template, request, send_from_directory, url_for
@@ -25,6 +26,7 @@ from . import db as DB
 from .audio_mode import AudioModeManager, VALID_MEDIA_MODE_SET
 from . import metrics as METRICS
 from .metrics import CONTENT_TYPE_LATEST
+from .media_metadata import MediaMetadataProbe
 from .spotify_client import SpotifyClient
 
 YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,}$")
@@ -724,6 +726,24 @@ def create_app() -> Flask:
         except Exception as e:
             print(f"[partybox] media auto-scan FAILED: {e}")
 
+    TOP_METRIC_MODES = ("partybox", "spotify")
+    EXTERNAL_META_MODES = ("airplay", "bluetooth")
+    top_cache_ttl = max(5.0, float(os.getenv("PARTYBOX_TOP_CACHE_TTL_SECONDS", "30") or "30"))
+    top_cache: Dict[str, Dict[str, Any]] = {m: {"ts": 0.0, "items": []} for m in TOP_METRIC_MODES}
+    media_probe = MediaMetadataProbe()
+    last_partybox_queue_id: Dict[str, int] = {"value": 0}
+    last_spotify_track_id: Dict[str, str] = {
+        "value": (DB.get_setting("metrics_last_spotify_track_id", "") or "").strip()
+    }
+    external_last_logged: Dict[str, Dict[str, Any]] = {
+        "airplay": {"key": "", "ts": 0},
+        "bluetooth": {"key": "", "ts": 0},
+    }
+    external_last_snapshot: Dict[str, Dict[str, Any]] = {
+        "airplay": {},
+        "bluetooth": {},
+    }
+
     def _bool_setting(name: str, default: str = "0") -> bool:
         """
         Be tolerant: if something ever wrote 'true'/'on' into settings,
@@ -746,44 +766,322 @@ def create_app() -> Flask:
             return f"endpoint:{request.endpoint}"
         return "unknown"
 
+    def _record_last_error() -> None:
+        METRICS.set_last_error_timestamp(time.time())
+
+    def _spotify_idle_message() -> str:
+        # TODO(house-account): when PartyBox moves to a permanent Spotify account,
+        # surface account-specific onboarding here (Join the Jam / connect to house account).
+        msg = (os.getenv("PARTYBOX_SPOTIFY_IDLE_MESSAGE", "Waiting for Spotify Connect...") or "").strip()
+        return msg or "Spotify idle (no active playback on PartyBox)"
+
+    def _spotify_connect_hint() -> str:
+        # TODO(house-account): update this once OAuth/account ownership is migrated.
+        hint = (
+            os.getenv(
+                "PARTYBOX_SPOTIFY_CONNECT_HINT",
+                "Connect to PartyBox on Spotify or ask someone to Join the Jam.",
+            )
+            or ""
+        ).strip()
+        return hint or "Connect to PartyBox on Spotify."
+
+    def _invalidate_top_cache(mode: Optional[str] = None) -> None:
+        if mode:
+            key = (mode or "").strip().lower()
+            if key in top_cache:
+                top_cache[key]["ts"] = 0.0
+                top_cache[key]["items"] = []
+            return
+        for key in top_cache:
+            top_cache[key]["ts"] = 0.0
+            top_cache[key]["items"] = []
+
+    def _extract_spotify_track_id(track: Dict[str, Any]) -> str:
+        tid = str((track or {}).get("id") or "").strip()
+        if tid:
+            return tid
+        uri = str((track or {}).get("uri") or "").strip()
+        if uri.startswith("spotify:track:"):
+            parts = uri.split(":")
+            if len(parts) >= 3:
+                return parts[-1].strip()
+        m = re.search(r"/track/([A-Za-z0-9]+)", uri)
+        if m:
+            return m.group(1)
+        return ""
+
+    def _partybox_track_identity(youtube_id: str) -> Tuple[str, str]:
+        token = (youtube_id or "").strip()
+        if not token:
+            return "", ""
+        if token.startswith("file:"):
+            return token, token
+        if "://" in token:
+            yid = _extract_youtube_id_from_url(token)
+            if yid:
+                return yid, token
+            digest = hashlib.sha1(token.encode("utf-8", errors="ignore")).hexdigest()[:16]
+            return f"urlhash:{digest}", token
+        return token, (_youtube_url_from_token(token) or token)
+
+    def _mode_last_switch_ts() -> int:
+        raw = (DB.get_setting("media_mode_last_switch_ts", "0") or "0").strip()
+        try:
+            return max(0, int(raw or "0"))
+        except Exception:
+            return 0
+
     def _update_mode_metric(mode: Optional[str] = None) -> None:
         try:
             METRICS.set_mode(mode or _current_media_mode())
+            METRICS.set_last_mode_change_timestamp(_mode_last_switch_ts())
         except Exception:
-            pass
+            _record_last_error()
 
     def _update_queue_depth_metric() -> None:
         try:
             METRICS.set_queue_depth(DB.queue_depth())
+            METRICS.set_db_ok(True)
         except Exception:
-            pass
+            METRICS.set_db_ok(False)
+            _record_last_error()
 
     def _update_spotify_metrics(state: Dict[str, Any]) -> None:
         payload = state if isinstance(state, dict) else {}
-        METRICS.set_spotify_ok(bool(payload.get("ok")))
+        ok = bool(payload.get("ok"))
+        METRICS.set_spotify_ok(ok)
         device = payload.get("device") if isinstance(payload.get("device"), dict) else {}
         visible = bool((device.get("id") or "").strip() or (device.get("name") or "").strip())
         METRICS.set_spotify_device_visible(visible)
         if str(payload.get("state") or "") != "cooldown":
             METRICS.set_spotify_last_rate_limit_retry_after_seconds(0)
+        if ok:
+            success_ts = float(payload.get("ts") or time.time())
+            METRICS.set_spotify_last_success_timestamp(success_ts)
+        elif str(payload.get("state") or "") not in ("cooldown", "inactive", "idle"):
+            _record_last_error()
 
     def _update_tv_ok_metric() -> None:
         try:
             hb_max_age = int(os.getenv("PARTYBOX_HEALTH_TV_HEARTBEAT_MAX_AGE_SECONDS", "20"))
             hb = _tv_heartbeat_check(max_age_seconds=hb_max_age)
             METRICS.set_tv_ok(bool(hb.get("ok")))
+            METRICS.set_db_ok(True)
         except Exception:
             METRICS.set_tv_ok(False)
+            METRICS.set_db_ok(False)
+            _record_last_error()
 
-    def _refresh_runtime_metrics() -> None:
+    def _record_play_history(
+        mode: str,
+        title: str = "",
+        artist: str = "",
+        album: str = "",
+        provider_id: str = "",
+        uri: str = "",
+        extra: Optional[Dict[str, Any]] = None,
+        ts: Optional[int] = None,
+    ) -> None:
+        extra_json = ""
+        if extra:
+            try:
+                extra_json = json.dumps(extra, separators=(",", ":"))[:1900]
+            except Exception:
+                extra_json = ""
+        event_ts = int(ts if ts is not None else time.time())
+        DB.add_play_history_event(
+            mode=mode,
+            title=title,
+            artist=artist,
+            album=album,
+            provider_id=provider_id,
+            uri=uri,
+            extra_json=extra_json,
+            ts=event_ts,
+        )
+        METRICS.inc_play_history_event(mode)
+        if mode in EXTERNAL_META_MODES:
+            METRICS.set_external_last_play_timestamp(mode, event_ts)
+
+    def _external_mode_snapshot(mode: str, log_event: bool = False) -> Dict[str, Any]:
+        m = (mode or "").strip().lower()
+        if m not in EXTERNAL_META_MODES:
+            return {}
+
+        snap = media_probe.snapshot(m)
+        if not isinstance(snap, dict):
+            snap = {}
+
+        active = bool(snap.get("active"))
+        metadata_available = bool(snap.get("metadata_available"))
+        METRICS.set_external_stream_active(m, active)
+        METRICS.set_external_metadata_available(m, metadata_available)
+
+        previous = external_last_snapshot.get(m) or {}
+        was_active = bool(previous.get("active"))
+        external_last_snapshot[m] = dict(snap)
+
+        if not active:
+            external_last_logged[m] = {"key": "", "ts": 0}
+            return snap
+
+        if not log_event:
+            return snap
+
+        provider_id = str(snap.get("provider_id") or "").strip()
+        title = str(snap.get("title") or "").strip()
+        artist = str(snap.get("artist") or "").strip()
+        album = str(snap.get("album") or "").strip()
+        uri = str(snap.get("uri") or "").strip()
+        device_name = str(snap.get("device_name") or "").strip()
+        device_id = str(snap.get("device_id") or "").strip()
+        note = str(snap.get("note") or "").strip()
+
+        if provider_id:
+            event_key = provider_id
+        elif title or artist or album:
+            digest = hashlib.sha1(f"{title}|{artist}|{album}".encode("utf-8", errors="ignore")).hexdigest()[:16]
+            event_key = f"{m}:{digest}"
+        else:
+            fallback_id = device_id or device_name or m
+            event_key = f"{m}:unknown:{fallback_id}"
+
+        last = external_last_logged.get(m) or {"key": "", "ts": 0}
+        if (event_key != str(last.get("key") or "")) or (not was_active):
+            _record_play_history(
+                mode=m,
+                title=title or "Unknown",
+                artist=artist,
+                album=album,
+                provider_id=provider_id,
+                uri=uri,
+                extra={
+                    "metadata_available": metadata_available,
+                    "device_name": device_name,
+                    "device_id": device_id,
+                    "note": note,
+                },
+                ts=int(time.time()),
+            )
+            external_last_logged[m] = {"key": event_key, "ts": int(time.time())}
+            METRICS.set_db_ok(True)
+        return snap
+
+    def _refresh_external_snapshots(log_events: bool = False) -> Dict[str, Dict[str, Any]]:
+        current_mode = _current_media_mode()
+        out: Dict[str, Dict[str, Any]] = {}
+        for ext_mode in EXTERNAL_META_MODES:
+            should_log = bool(log_events and current_mode == ext_mode)
+            try:
+                out[ext_mode] = _external_mode_snapshot(ext_mode, log_event=should_log)
+                METRICS.set_db_ok(True)
+            except Exception:
+                out[ext_mode] = {}
+                METRICS.set_db_ok(False)
+                _record_last_error()
+        return out
+
+    def _get_top_items_cached(mode: str, limit: int = 25, window_days: Optional[int] = None) -> List[Dict[str, Any]]:
+        key = (mode or "").strip().lower()
+        if key not in top_cache:
+            return []
+        now = time.time()
+        cached = top_cache[key]
+        if (now - float(cached.get("ts") or 0.0)) < top_cache_ttl:
+            return list(cached.get("items") or [])
+        try:
+            items = DB.get_top_played(key, limit=limit, window_days=window_days)
+            top_cache[key] = {"ts": now, "items": list(items)}
+            METRICS.set_db_ok(True)
+            return list(items)
+        except Exception:
+            METRICS.set_db_ok(False)
+            _record_last_error()
+            top_cache[key] = {"ts": now, "items": []}
+            return []
+
+    def _refresh_top_metrics(limit: int = 25) -> None:
+        for mode_name in TOP_METRIC_MODES:
+            top_items = _get_top_items_cached(mode_name, limit=limit)
+            METRICS.set_top_items(mode_name, top_items, limit=limit)
+
+    def _log_partybox_play_event(queue_id: int) -> None:
+        if queue_id <= 0:
+            return
+        if last_partybox_queue_id["value"] == queue_id:
+            return
+        if _current_media_mode() != "partybox":
+            return
+        row = DB.get_queue_item(queue_id)
+        if not row:
+            return
+        track_id, uri = _partybox_track_identity(str(row.get("youtube_id") or ""))
+        if not track_id:
+            return
+        DB.add_play_event(
+            mode="partybox",
+            track_id=track_id,
+            title=str(row.get("title") or ""),
+            artist="",
+            uri=uri,
+            duration_ms=0,
+            started_by=(request.remote_addr or ""),
+        )
+        METRICS.inc_play_history_event("partybox")
+        last_partybox_queue_id["value"] = queue_id
+        _invalidate_top_cache("partybox")
+
+    def _log_spotify_play_event(state: Dict[str, Any]) -> None:
+        if _current_media_mode() != "spotify":
+            return
+        payload = state if isinstance(state, dict) else {}
+        if not bool(payload.get("ok")):
+            return
+        if not bool(payload.get("spotify_on_partybox")):
+            return
+        if str(payload.get("state") or "").strip().lower() not in ("playing", "paused"):
+            return
+        track = payload.get("track") if isinstance(payload.get("track"), dict) else {}
+        track_id = _extract_spotify_track_id(track)
+        if not track_id:
+            return
+        if track_id == last_spotify_track_id["value"]:
+            return
+        artists = track.get("artists") if isinstance(track.get("artists"), list) else []
+        artist_text = ", ".join(str(a) for a in artists if str(a).strip())
+        uri = str(track.get("uri") or f"spotify:track:{track_id}")
+        duration_ms = int(track.get("duration_ms") or 0)
+        DB.add_play_event(
+            mode="spotify",
+            track_id=track_id,
+            title=str(track.get("name") or ""),
+            artist=artist_text,
+            uri=uri,
+            duration_ms=duration_ms,
+            started_by="spotify",
+        )
+        METRICS.inc_play_history_event("spotify")
+        last_spotify_track_id["value"] = track_id
+        DB.set_setting("metrics_last_spotify_track_id", track_id)
+        _invalidate_top_cache("spotify")
+
+    def _refresh_runtime_metrics(include_top: bool = False) -> None:
         _update_mode_metric()
         _update_queue_depth_metric()
         _update_tv_ok_metric()
+        _refresh_external_snapshots(log_events=False)
+        if include_top:
+            _refresh_top_metrics(limit=25)
         METRICS.update_uptime()
 
     def _spotify_snapshot(force: bool = False, allow_fetch: bool = True) -> Dict[str, Any]:
         payload = spotify_client.get_state(force=force, allow_fetch=allow_fetch)
         _update_spotify_metrics(payload)
+        try:
+            _log_spotify_play_event(payload)
+        except Exception:
+            _record_last_error()
         return payload
 
     def _spotify_inactive_payload(note: str = "Spotify connected elsewhere.") -> Dict[str, Any]:
@@ -792,13 +1090,16 @@ def create_app() -> Flask:
             "state": "inactive",
             "spotify_on_partybox": False,
             "device": {"name": "", "id": "", "volume_percent": 0},
-            "track": {"name": "", "artists": [], "album": "", "duration_ms": 0, "id": ""},
+            "track": {"name": "", "artists": [], "album": "", "duration_ms": 0, "id": "", "uri": ""},
             "progress_ms": 0,
             "images": {"small": "", "medium": "", "large": ""},
             "shuffle_state": False,
             "repeat_state": "off",
             "error": "",
             "note": note,
+            "ui_state": "inactive",
+            "ui_message": note,
+            "connect_hint": _spotify_connect_hint(),
             "ts": int(time.time()),
         }
 
@@ -810,17 +1111,48 @@ def create_app() -> Flask:
         """
         mode = (media_mode or "").strip().lower()
         payload = dict(spotify or {})
+        state = str(payload.get("state") or "").strip().lower()
+        device = payload.get("device") if isinstance(payload.get("device"), dict) else {}
+        device_name = str(device.get("name") or "").strip()
+        on_partybox = bool(payload.get("spotify_on_partybox"))
+        track = payload.get("track") if isinstance(payload.get("track"), dict) else {}
+        has_track = bool(str(track.get("name") or "").strip())
+
+        def _apply_waiting_state(ui_state: str, message: str, keep_track: bool = False) -> None:
+            payload["ui_state"] = ui_state
+            payload["ui_message"] = message
+            payload["connect_hint"] = _spotify_connect_hint()
+            if keep_track:
+                return
+            payload["track"] = {"name": "", "artists": [], "album": "", "duration_ms": 0, "id": "", "uri": ""}
+            payload["progress_ms"] = 0
 
         if mode == "spotify":
+            if state == "cooldown":
+                wait = int(payload.get("cooldown_remaining_s") or 0)
+                msg = f"Rate limited (retrying soon{f' in {wait}s' if wait > 0 else ''})"
+                _apply_waiting_state("rate_limited", msg)
+                return payload
+            if not bool(payload.get("ok")):
+                _apply_waiting_state("waiting", _spotify_idle_message())
+                return payload
+            if on_partybox and state in ("playing", "paused") and has_track:
+                payload["ui_state"] = "playing_on_partybox"
+                payload["ui_message"] = ""
+                payload["connect_hint"] = _spotify_connect_hint()
+                return payload
+            if state in ("playing", "paused") and not on_partybox:
+                where = f"Playing on {device_name} (not PartyBox)" if device_name else "Waiting for PartyBox Connect"
+                _apply_waiting_state("playing_elsewhere", where, keep_track=True)
+                return payload
+            _apply_waiting_state("idle", _spotify_idle_message())
             return payload
 
         if not bool(payload.get("ok")):
             return _spotify_inactive_payload("Spotify connected elsewhere.")
 
         expected_device_id = (spotify_client.device_id or os.getenv("SPOTIFY_DEVICE_ID", "")).strip()
-        device = payload.get("device") if isinstance(payload.get("device"), dict) else {}
         actual_device_id = str(device.get("id") or "").strip()
-        on_partybox = bool(payload.get("spotify_on_partybox"))
         device_match = bool(expected_device_id and actual_device_id and actual_device_id == expected_device_id)
 
         if device_match or (not expected_device_id and on_partybox):
@@ -978,6 +1310,7 @@ def create_app() -> Flask:
             return
         route = str(getattr(g, "_partybox_route", "unknown"))
         METRICS.observe_http_exception(route, exc.__class__.__name__)
+        _record_last_error()
 
     # ---------- Pages ----------
     @app.get("/")
@@ -1000,9 +1333,12 @@ def create_app() -> Flask:
         try:
             DB.get_setting("admin_key", "JBOX")
             fatal_raw = (DB.get_setting("fatal_error", "") or "").strip()
+            METRICS.set_db_ok(True)
         except Exception as e:
             db_ok = False
             db_error = str(e)
+            METRICS.set_db_ok(False)
+            _record_last_error()
 
         fatal_state = bool(fatal_raw)
         ok = bool(db_ok and not fatal_state)
@@ -1021,7 +1357,13 @@ def create_app() -> Flask:
 
     @app.get("/metrics")
     def metrics():
-        _refresh_runtime_metrics()
+        try:
+            _refresh_runtime_metrics(include_top=True)
+        except Exception:
+            METRICS.set_db_ok(False)
+            _record_last_error()
+            METRICS.set_top_items("partybox", [], limit=25)
+            METRICS.set_top_items("spotify", [], limit=25)
         return Response(METRICS.render_metrics(), content_type=CONTENT_TYPE_LATEST)
 
     @app.get("/tv")
@@ -1106,6 +1448,7 @@ def create_app() -> Flask:
 
         spotify = _spotify_snapshot(force=force_spotify, allow_fetch=(media_mode == "spotify" or force_spotify))
         spotify = _spotify_payload_for_ui(media_mode, spotify)
+        external_now_playing = _refresh_external_snapshots(log_events=True)
 
         mode_status = _media_mode_status_compact()
 
@@ -1132,6 +1475,7 @@ def create_app() -> Flask:
                     "media_mode": media_mode,
                     "tv_qr_enabled": tv_qr_enabled,
                     "spotify": spotify,
+                    "external_now_playing": external_now_playing,
                     "media_mode_status": mode_status,
                     "mode": "paused",
                     "now": _pack(now) if now else (_pack(up) if up else None),
@@ -1150,6 +1494,7 @@ def create_app() -> Flask:
                     "media_mode": media_mode,
                     "tv_qr_enabled": tv_qr_enabled,
                     "spotify": spotify,
+                    "external_now_playing": external_now_playing,
                     "media_mode_status": mode_status,
                     "mode": "playing",
                     "now": _pack(now),
@@ -1168,6 +1513,7 @@ def create_app() -> Flask:
                     "media_mode": media_mode,
                     "tv_qr_enabled": tv_qr_enabled,
                     "spotify": spotify,
+                    "external_now_playing": external_now_playing,
                     "media_mode_status": mode_status,
                     "mode": "queue",
                     "now": _pack(up),
@@ -1184,6 +1530,7 @@ def create_app() -> Flask:
                 "media_mode": media_mode,
                 "tv_qr_enabled": tv_qr_enabled,
                 "spotify": spotify,
+                "external_now_playing": external_now_playing,
                 "media_mode_status": mode_status,
                 "mode": "empty",
                 "now": None,
@@ -1195,6 +1542,17 @@ def create_app() -> Flask:
     def api_queue():
         items = DB.list_queue(limit=100)
         return jsonify({"items": items})
+
+    @app.get("/api/history")
+    def api_history():
+        limit_raw = (request.args.get("limit", "25") or "25").strip()
+        try:
+            limit = int(limit_raw)
+        except Exception:
+            limit = 25
+        limit = max(1, min(100, limit))
+        rows = DB.list_play_history(limit=limit)
+        return jsonify({"ok": True, "items": rows, "limit": limit, "ts": int(time.time())})
 
     @app.post("/api/tv/heartbeat")
     def api_tv_heartbeat():
@@ -1224,6 +1582,7 @@ def create_app() -> Flask:
         except Exception as e:
             METRICS.inc_tv_error("heartbeat")
             METRICS.set_tv_ok(False)
+            _record_last_error()
             return jsonify({"ok": False, "error": str(e)}), 400
 
     @app.post("/api/tv/mark_playing")
@@ -1232,10 +1591,17 @@ def create_app() -> Flask:
         qid = int(data.get("queue_id", 0))
         if qid <= 0:
             METRICS.inc_tv_error("bad_queue_id")
+            _record_last_error()
             return jsonify({"ok": False, "error": "bad queue_id"}), 400
         DB.mark_playing(qid)
         METRICS.inc_tv_command("mark_playing")
         METRICS.inc_queue_play()
+        try:
+            _log_partybox_play_event(qid)
+            METRICS.set_db_ok(True)
+        except Exception:
+            METRICS.set_db_ok(False)
+            _record_last_error()
         _update_queue_depth_metric()
         return jsonify({"ok": True})
 
@@ -1265,10 +1631,13 @@ def create_app() -> Flask:
         note_text = (data.get("note_text") or "").strip()
 
         if catalog_id <= 0:
+            _record_last_error()
             return jsonify({"ok": False, "error": "bad catalog_id"}), 400
 
         qid = DB.enqueue(catalog_id, note_text=note_text[:120] if note_text else None)
         METRICS.inc_queue_add("user_request")
+        METRICS.set_last_queue_add_timestamp(time.time())
+        METRICS.set_db_ok(True)
         _update_queue_depth_metric()
         return jsonify({"ok": True, "queue_id": qid})
 
@@ -1375,6 +1744,8 @@ def create_app() -> Flask:
             stop_spotify_playback_cb=_try_pause_spotify_playback_cached_token,
         )
         _update_mode_metric(str(result.get("mode") or ""))
+        if not bool(result.get("ok")):
+            _record_last_error()
         status_code = 200 if bool(result.get("ok")) else 500
         return jsonify(result), status_code
 
@@ -1392,6 +1763,8 @@ def create_app() -> Flask:
             stop_spotify_playback_cb=_try_pause_spotify_playback_cached_token,
         )
         _update_mode_metric(str(result.get("mode") or ""))
+        if not bool(result.get("ok")):
+            _record_last_error()
         status_code = 200 if bool(result.get("ok")) else 500
         return jsonify(result), status_code
 
@@ -1424,6 +1797,7 @@ def create_app() -> Flask:
             # In Spotify mode, allow cached/live refreshes via SpotifyClient cache policy.
             spotify = _spotify_snapshot(force=False, allow_fetch=(media_mode == "spotify"))
             spotify = _spotify_payload_for_ui(media_mode, spotify)
+            external_now_playing = _refresh_external_snapshots(log_events=True)
             mode_status = _media_mode_status_compact()
 
             now = DB.get_now_playing()
@@ -1469,6 +1843,7 @@ def create_app() -> Flask:
                         "now": now_out,
                         "up_next": up_out,
                         "spotify": spotify,
+                        "external_now_playing": external_now_playing,
                         "media_mode_status": mode_status,
                     },
                 }
@@ -1476,6 +1851,7 @@ def create_app() -> Flask:
         except Exception as e:
             METRICS.inc_tv_error("status_exception")
             METRICS.set_tv_ok(False)
+            _record_last_error()
             return jsonify({"ok": False, "error": str(e)}), 500
 
 

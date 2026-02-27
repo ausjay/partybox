@@ -252,6 +252,13 @@
       const paused = !!(STATE && STATE.paused);
       const muted = !!(STATE && STATE.muted);
       const playbackMode = String((STATE && STATE.mode) || "").toLowerCase();
+      const externalNow = (STATE && STATE.external_now_playing && typeof STATE.external_now_playing === "object")
+        ? STATE.external_now_playing
+        : {};
+      const btNow = (externalNow.bluetooth && typeof externalNow.bluetooth === "object")
+        ? externalNow.bluetooth
+        : {};
+      const btDevice = String(btNow.device_name || "").trim();
 
       const md = el("mode_dot");
       md.classList.remove("ok", "warn", "bad");
@@ -274,6 +281,9 @@
       if (mediaMode === "mute") {
         statusLabel = "Muted";
         sd.classList.add("warn");
+      } else if (mediaMode === "bluetooth" && btDevice) {
+        statusLabel = `Bluetooth Active • ${btDevice}`;
+        sd.classList.add("ok");
       } else if (mediaMode !== "partybox") {
         statusLabel = `${el("mode_text").textContent.replace("Mode: ", "")} Active`;
         sd.classList.add("ok");

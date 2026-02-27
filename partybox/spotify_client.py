@@ -209,6 +209,8 @@ class SpotifyClient:
         if status == 429:
             METRICS.observe_spotify_rate_limited()
             METRICS.set_spotify_last_rate_limit_retry_after_seconds(retry_after)
+        if status <= 0 or status >= 400:
+            METRICS.observe_spotify_api_error(status)
 
     def _refresh_access_token(self) -> Tuple[bool, str]:
         if not self.enabled:
@@ -430,6 +432,7 @@ class SpotifyClient:
                 "album": str(((item.get("album") or {}) if isinstance(item.get("album"), dict) else {}).get("name") or ""),
                 "duration_ms": int(item.get("duration_ms") or 0),
                 "id": str(item.get("id") or ""),
+                "uri": str(item.get("uri") or ""),
             },
             "progress_ms": int(payload.get("progress_ms") or 0),
             "images": self._pick_images(item),

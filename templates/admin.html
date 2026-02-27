@@ -275,6 +275,33 @@
         </div>
       </div>
 
+      <div class="panel panel-history" style="grid-column: span 12;">
+        <div class="panelHeader">
+          <div class="kicker">Last 25 Plays</div>
+          <div class="hint">Time, mode, and best-effort metadata across PartyBox, Spotify, AirPlay, and Bluetooth</div>
+        </div>
+        <div class="panelInner">
+          <div id="history_empty_card" class="card" style="display:none;">
+            <div class="title">No play history yet</div>
+            <div class="sub">Plays will appear here once something starts.</div>
+          </div>
+          <div style="overflow:auto;">
+            <table id="history_table" style="width:100%; border-collapse:collapse; font-size:14px;">
+              <thead>
+                <tr style="text-align:left; color:rgba(200,220,240,0.9); border-bottom:1px solid rgba(255,255,255,0.12);">
+                  <th style="padding:8px 6px;">Time</th>
+                  <th style="padding:8px 6px;">Mode</th>
+                  <th style="padding:8px 6px;">Artist</th>
+                  <th style="padding:8px 6px;">Title</th>
+                  <th style="padding:8px 6px;">Source</th>
+                </tr>
+              </thead>
+              <tbody id="history_tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
     </div> <!-- /grid -->
 
   </div> <!-- /page -->
@@ -293,7 +320,8 @@
     av_mode: "{{ av_mode|e }}",
     media_mode: "{{ media_mode|e }}",
     playback_mode: "{{ 'paused' if paused else 'playing' }}",
-    media_mode_status: null
+    media_mode_status: null,
+    external_now_playing: {}
   };
   let PENDING_MEDIA_MODE = "";
 
@@ -362,10 +390,19 @@
     const p = String(playbackMode || "").toLowerCase();
     const isPaused = !!paused;
     const isMuted = !!muted;
+    const externalNow = (STATE && STATE.external_now_playing && typeof STATE.external_now_playing === "object")
+      ? STATE.external_now_playing
+      : {};
+    const btNow = (externalNow.bluetooth && typeof externalNow.bluetooth === "object")
+      ? externalNow.bluetooth
+      : {};
+    const btDevice = String(btNow.device_name || "").trim();
 
     let base = "Idle";
     if (m === "mute") {
       base = "Muted";
+    } else if (m === "bluetooth" && btDevice) {
+      base = `Bluetooth Active • ${btDevice}`;
     } else if (m !== "partybox") {
       base = `${modeLabel(m).replace("Mode: ", "")} Active`;
     } else if (isPaused || p === "paused") {
@@ -619,6 +656,7 @@
     // This uses /api/state for PartyBox queue and Spotify metadata.
     const now = state.now;
     const spotify = state.spotify || {};
+    const externalNow = state.external_now_playing || {};
     const mediaMode = (state.media_mode || "partybox").toLowerCase();
 
     const titleEl = document.getElementById("now_title");
@@ -647,25 +685,74 @@
       const accountName = ((((spotify.account || {}).display_name) || "").trim());
       const err = (spotify.error || "").toString().trim();
       const playbackState = String(spotify.state || "").toLowerCase();
+      const uiState = String(spotify.ui_state || "").toLowerCase();
+      const uiMessage = (spotify.ui_message || "").toString().trim();
+      const connectHint = (spotify.connect_hint || "").toString().trim();
 
-      titleEl.textContent = title || "Spotify mode active";
-
-      const parts = [];
-      if (artists) parts.push(artists);
-      if (album) parts.push(album);
-      if (deviceName) parts.push(`Device: ${deviceName}`);
-      if (accountName) parts.push(`Account: ${accountName}`);
-      if (err) parts.push(`Spotify API: ${err}`);
-      subEl.textContent = parts.length
-        ? parts.join(" • ")
-        : "Waiting for Spotify playback metadata.";
+      if (uiState === "playing_on_partybox" && title) {
+        titleEl.textContent = title;
+        const parts = [];
+        if (artists) parts.push(artists);
+        if (album) parts.push(album);
+        if (deviceName) parts.push(`Device: ${deviceName}`);
+        if (accountName) parts.push(`Account: ${accountName}`);
+        if (err) parts.push(`Spotify API: ${err}`);
+        subEl.textContent = parts.length ? parts.join(" • ") : "Spotify playback active.";
+      } else {
+        titleEl.textContent = uiMessage || "Waiting for Spotify Connect...";
+        const parts = [];
+        if (connectHint) parts.push(connectHint);
+        if (deviceName && uiState === "playing_elsewhere") parts.push(`Current device: ${deviceName}`);
+        if (accountName) parts.push(`Account: ${accountName}`);
+        if (err && uiState !== "rate_limited") parts.push(`Spotify API: ${err}`);
+        subEl.textContent = parts.length ? parts.join(" • ") : "Spotify idle (no active playback on PartyBox).";
+      }
 
       kvEl.style.display = "grid";
-      kvPlayback.textContent = (playbackState === "playing" || playbackState === "paused")
-        ? (playbackState[0].toUpperCase() + playbackState.slice(1))
-        : "Spotify active";
+      if (uiState === "playing_on_partybox" && (playbackState === "playing" || playbackState === "paused")) {
+        kvPlayback.textContent = playbackState[0].toUpperCase() + playbackState.slice(1);
+      } else if (uiState === "rate_limited") {
+        kvPlayback.textContent = "Rate limited";
+      } else if (uiState === "playing_elsewhere") {
+        kvPlayback.textContent = "Playing elsewhere";
+      } else {
+        kvPlayback.textContent = "Waiting";
+      }
       kvRequests.textContent = state.locked ? "Locked" : "Open";
       kvAv.textContent = "Spotify";
+      return;
+    }
+
+    if (mediaMode === "airplay" || mediaMode === "bluetooth") {
+      const ext = externalNow[mediaMode] || {};
+      const active = !!ext.active;
+      const title = (ext.title || "").toString().trim();
+      const artist = (ext.artist || "").toString().trim();
+      const album = (ext.album || "").toString().trim();
+      const device = (ext.device_name || "").toString().trim();
+      const metadataAvailable = !!ext.metadata_available;
+      const modeLabelText = mediaMode === "airplay" ? "AirPlay" : "Bluetooth";
+
+      if (active && metadataAvailable && title) {
+        titleEl.textContent = title;
+      } else if (active) {
+        titleEl.textContent = `${modeLabelText} audio active`;
+      } else {
+        titleEl.textContent = `${modeLabelText} idle`;
+      }
+
+      const parts = [];
+      if (artist) parts.push(artist);
+      if (album) parts.push(album);
+      if (device) parts.push(`Device: ${device}`);
+      if (!metadataAvailable && active) parts.push("Metadata unavailable");
+      if (!active) parts.push(`Waiting for ${modeLabelText} stream`);
+      subEl.textContent = parts.length ? parts.join(" • ") : `${modeLabelText} receiver ready.`;
+
+      kvEl.style.display = "grid";
+      kvPlayback.textContent = active ? "Streaming" : "Waiting";
+      kvRequests.textContent = state.locked ? "Locked" : "Open";
+      kvAv.textContent = modeLabelText;
       return;
     }
 
@@ -763,6 +850,55 @@
       row.appendChild(rmBtn);
 
       list.appendChild(row);
+    });
+  }
+
+  function fmtLocalTs(ts) {
+    const n = Number(ts || 0);
+    if (!n) return "—";
+    try {
+      return new Date(n * 1000).toLocaleString();
+    } catch (e) {
+      return String(n);
+    }
+  }
+
+  function renderHistory(items) {
+    const rows = Array.isArray(items) ? items : [];
+    const tbody = document.getElementById("history_tbody");
+    const empty = document.getElementById("history_empty_card");
+    if (!tbody || !empty) return;
+    tbody.innerHTML = "";
+
+    if (!rows.length) {
+      empty.style.display = "block";
+      return;
+    }
+    empty.style.display = "none";
+
+    rows.forEach((it) => {
+      const tr = document.createElement("tr");
+      tr.style.borderBottom = "1px solid rgba(255,255,255,0.08)";
+
+      const mode = (it.mode || "unknown").toString().trim().toLowerCase();
+      const title = (it.title || "").toString().trim() || "Unknown";
+      const artist = (it.artist || "").toString().trim() || "Unknown";
+      const source = (it.provider_id || it.uri || "").toString().trim() || "—";
+
+      const cols = [
+        fmtLocalTs(it.ts),
+        mode,
+        artist,
+        title,
+        source,
+      ];
+      cols.forEach((txt) => {
+        const td = document.createElement("td");
+        td.style.padding = "8px 6px";
+        td.textContent = txt;
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
     });
   }
 
@@ -1017,6 +1153,17 @@
     }
   }
 
+  async function pollHistory() {
+    try {
+      const r = await fetch("/api/history?limit=25", { cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok || !j || j.ok === false) return;
+      renderHistory(j.items || []);
+    } catch (e) {
+      // ignore transient
+    }
+  }
+
   async function pollState() {
     try {
       const r = await fetch("/api/state", { cache: "no-store" });
@@ -1031,6 +1178,7 @@
         tv_qr_enabled: !!(j.tv_qr_enabled ?? true),
         now: j.now || null,
         spotify: j.spotify || null,
+        external_now_playing: j.external_now_playing || {},
         media_mode_status: j.media_mode_status || null
       };
       if (PENDING_MEDIA_MODE && STATE.media_mode === PENDING_MEDIA_MODE) {
@@ -1055,7 +1203,8 @@
         av_mode: STATE.av_mode,
         media_mode: STATE.media_mode,
         now: STATE.now,
-        spotify: STATE.spotify
+        spotify: STATE.spotify,
+        external_now_playing: STATE.external_now_playing
       });
 
     } catch (e) {
@@ -1100,12 +1249,14 @@
   // init
   pollState();
   pollQueue();
+  pollHistory();
   pollHealth();
   pollMediaModeStatus();
 
   // keep it live
   setInterval(pollState, 30000);
   setInterval(pollQueue, 1200);
+  setInterval(pollHistory, 7000);
   setInterval(pollHealth, 5000);
   setInterval(pollMediaModeStatus, 5000);
 </script>

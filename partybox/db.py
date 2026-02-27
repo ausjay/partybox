@@ -64,6 +64,53 @@ def init_db() -> None:
             """
         )
 
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS play_events (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              ts INTEGER NOT NULL,
+              mode TEXT NOT NULL,
+              track_id TEXT NOT NULL,
+              title TEXT DEFAULT '',
+              artist TEXT DEFAULT '',
+              uri TEXT DEFAULT '',
+              duration_ms INTEGER DEFAULT 0,
+              started_by TEXT DEFAULT ''
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_play_events_mode_track ON play_events(mode, track_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_play_events_ts ON play_events(ts)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_play_events_mode_ts ON play_events(mode, ts)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS play_history (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              ts INTEGER NOT NULL,
+              mode TEXT NOT NULL,
+              title TEXT DEFAULT '',
+              artist TEXT DEFAULT '',
+              album TEXT DEFAULT '',
+              provider_id TEXT DEFAULT '',
+              uri TEXT DEFAULT '',
+              extra_json TEXT DEFAULT ''
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_play_history_ts ON play_history(ts)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_play_history_mode_ts ON play_history(mode, ts)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_play_history_mode_provider ON play_history(mode, provider_id)")
+
+        # One-time compatibility backfill from older play_events storage.
+        conn.execute(
+            """
+            INSERT INTO play_history(ts, mode, title, artist, album, provider_id, uri, extra_json)
+            SELECT pe.ts, pe.mode, pe.title, pe.artist, '', pe.track_id, pe.uri, ''
+            FROM play_events pe
+            WHERE NOT EXISTS (SELECT 1 FROM play_history LIMIT 1)
+            """
+        )
+
         # Backfill / migrate older DBs safely
         if not _col_exists(conn, "queue", "status"):
             conn.execute("ALTER TABLE queue ADD COLUMN status TEXT NOT NULL DEFAULT 'queued'")
@@ -76,17 +123,24 @@ def init_db() -> None:
         if not _col_exists(conn, "queue", "ended_ts"):
             conn.execute("ALTER TABLE queue ADD COLUMN ended_ts INTEGER")
 
-        # Ensure settings defaults
-        if get_setting("admin_key", None) is None:
-            set_setting("admin_key", "JBOX")
-        if get_setting("requests_locked", None) is None:
-            set_setting("requests_locked", "0")
-        if get_setting("tv_paused", None) is None:
-            set_setting("tv_paused", "0")
-        if get_setting("media_mode", None) is None:
-            legacy_av = (get_setting("av_mode", "partybox") or "partybox").strip().lower()
+        # Ensure settings defaults using the same transaction/connection.
+        def _setting_get(key: str, default: Optional[str] = None) -> Optional[str]:
+            row = conn.execute("SELECT v FROM settings WHERE k=?", (key,)).fetchone()
+            return str(row["v"]) if row else default
+
+        def _setting_set_default(key: str, value: str) -> None:
+            conn.execute(
+                "INSERT INTO settings(k,v) VALUES(?,?) ON CONFLICT(k) DO NOTHING",
+                (key, value),
+            )
+
+        _setting_set_default("admin_key", "JBOX")
+        _setting_set_default("requests_locked", "0")
+        _setting_set_default("tv_paused", "0")
+        if _setting_get("media_mode", None) is None:
+            legacy_av = (_setting_get("av_mode", "partybox") or "partybox").strip().lower()
             default_media_mode = "spotify" if legacy_av == "spotify" else "partybox"
-            set_setting("media_mode", default_media_mode)
+            _setting_set_default("media_mode", default_media_mode)
 
         conn.commit()
 
@@ -222,6 +276,23 @@ def queue_depth() -> int:
             "SELECT COUNT(*) AS c FROM queue WHERE status IN ('queued','playing')"
         ).fetchone()
         return int(r["c"] or 0) if r else 0
+
+
+def get_queue_item(queue_id: int) -> Optional[Dict[str, Any]]:
+    with _connect() as conn:
+        r = conn.execute(
+            """
+            SELECT
+              q.id, q.status, q.pos, q.note_text,
+              c.id AS catalog_id, c.title, c.youtube_id
+            FROM queue q
+            JOIN catalog c ON c.id = q.catalog_id
+            WHERE q.id = ?
+            LIMIT 1
+            """,
+            (int(queue_id),),
+        ).fetchone()
+        return dict(r) if r else None
 
 
 def normalize_queue_positions() -> None:
@@ -370,3 +441,149 @@ def skip_current_or_next() -> int:
             return int(cur.rowcount)
 
         return 0
+
+
+# ---------------- Play events ----------------
+
+def add_play_event(
+    mode: str,
+    track_id: str,
+    title: str = "",
+    artist: str = "",
+    uri: str = "",
+    duration_ms: int = 0,
+    started_by: str = "",
+    ts: Optional[int] = None,
+) -> int:
+    mode_val = (mode or "").strip().lower()
+    if mode_val not in ("partybox", "spotify"):
+        raise ValueError("mode must be 'partybox' or 'spotify'")
+    track_val = (track_id or "").strip()
+    if not track_val:
+        raise ValueError("track_id is required")
+    ts_val = int(ts if ts is not None else _now())
+    duration_val = max(0, int(duration_ms or 0))
+    # Keep unified play history in sync for admin/reporting views.
+    add_play_history_event(
+        ts=ts_val,
+        mode=mode_val,
+        title=title,
+        artist=artist,
+        album="",
+        provider_id=track_val,
+        uri=uri,
+        extra_json="",
+    )
+    with _connect() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO play_events(ts, mode, track_id, title, artist, uri, duration_ms, started_by)
+            VALUES(?,?,?,?,?,?,?,?)
+            """,
+            (
+                ts_val,
+                mode_val,
+                track_val[:128],
+                (title or "")[:200],
+                (artist or "")[:200],
+                (uri or "")[:512],
+                duration_val,
+                (started_by or "")[:80],
+            ),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+
+
+def add_play_history_event(
+    mode: str,
+    title: str = "",
+    artist: str = "",
+    album: str = "",
+    provider_id: str = "",
+    uri: str = "",
+    extra_json: str = "",
+    ts: Optional[int] = None,
+) -> int:
+    mode_val = (mode or "").strip().lower()
+    if not mode_val:
+        mode_val = "unknown"
+    ts_val = int(ts if ts is not None else _now())
+    with _connect() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO play_history(ts, mode, title, artist, album, provider_id, uri, extra_json)
+            VALUES(?,?,?,?,?,?,?,?)
+            """,
+            (
+                ts_val,
+                mode_val[:24],
+                (title or "")[:200],
+                (artist or "")[:200],
+                (album or "")[:200],
+                (provider_id or "")[:200],
+                (uri or "")[:512],
+                (extra_json or "")[:2000],
+            ),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+
+
+def list_play_history(limit: int = 25) -> List[Dict[str, Any]]:
+    lim = max(1, min(200, int(limit or 25)))
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+              id,
+              ts,
+              mode,
+              title,
+              artist,
+              album,
+              provider_id,
+              uri,
+              extra_json
+            FROM play_history
+            ORDER BY ts DESC, id DESC
+            LIMIT ?
+            """,
+            (lim,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_top_played(mode: str, limit: int = 25, window_days: Optional[int] = None) -> List[Dict[str, Any]]:
+    mode_val = (mode or "").strip().lower()
+    if mode_val not in ("partybox", "spotify"):
+        return []
+    lim = max(1, min(100, int(limit or 25)))
+    args: List[Any] = [mode_val]
+    time_filter = ""
+    if window_days is not None:
+        days = int(window_days or 0)
+        if days > 0:
+            cutoff = _now() - (days * 86400)
+            time_filter = " AND ts >= ?"
+            args.append(cutoff)
+    args.append(lim)
+    with _connect() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT
+              provider_id AS track_id,
+              MAX(title) AS title,
+              MAX(artist) AS artist,
+              COUNT(*) AS plays
+            FROM play_history
+            WHERE mode = ?
+              AND provider_id != ''
+              {time_filter}
+            GROUP BY provider_id
+            ORDER BY plays DESC, MAX(ts) DESC
+            LIMIT ?
+            """,
+            args,
+        ).fetchall()
+        return [dict(r) for r in rows]

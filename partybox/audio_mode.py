@@ -39,6 +39,7 @@ AIRPLAY_START_CANDIDATES = (
     "partybox-airplay.service",
     "shairport-sync.service",
 )
+AIRPLAY_PROCESS_NAMES = ("shairport-sync",)
 
 
 def _log(msg: str) -> None:
@@ -194,6 +195,17 @@ class AudioModeManager:
                 device_ids.append(parts[1].strip())
         return device_ids
 
+    def _pkill_exact(self, process_name: str, signal_name: str = "TERM", timeout: float = 2.5) -> Dict[str, Any]:
+        sig = (signal_name or "TERM").strip().upper()
+        result = self._run([self._sudo_bin, "-n", "pkill", f"-{sig}", "-x", process_name], timeout=timeout)
+        if result.get("ok"):
+            return result
+        # pkill returns 1 when no process matched. That's not a teardown failure.
+        if int(result.get("returncode") or -1) == 1 and not str(result.get("stderr") or "").strip():
+            result["ok"] = True
+            result["ignored"] = True
+        return result
+
     def _teardown_bluetooth(self, actions: List[Dict[str, Any]]) -> None:
         for device_id in self._bluetooth_connected_device_ids():
             r = self._bluetoothctl_single("disconnect", device_id, timeout=4.0)
@@ -211,6 +223,87 @@ class AudioModeManager:
         r["action"] = "systemctl_stop"
         r["unit"] = "bluetooth.service"
         actions.append(r)
+
+    def _wait_for_service_inactive(
+        self,
+        unit: str,
+        timeout: float = 8.0,
+        poll_interval: float = 0.25,
+        stable_seconds: float = 1.0,
+    ) -> Dict[str, Any]:
+        poll = max(0.1, float(poll_interval))
+        checks = max(1, int(float(timeout) / poll))
+        stable_for = max(0.0, float(stable_seconds))
+        inactive_states = {"inactive", "failed", "unknown", "error", "not-found"}
+        last: Dict[str, Any] = {"ok": False, "status": "unknown", "stderr": ""}
+        inactive_since: Optional[float] = None
+        for i in range(checks):
+            st = self._systemctl_is_active(unit)
+            last = st
+            now = time.time()
+            status = str(st.get("status") or "").strip().lower()
+            inactive = (not bool(st.get("ok"))) and status in inactive_states
+            if inactive:
+                if inactive_since is None:
+                    inactive_since = now
+                if (now - inactive_since) >= stable_for:
+                    return {
+                        "ok": True,
+                        "inactive": True,
+                        "status": status,
+                        "stderr": str(st.get("stderr") or ""),
+                        "raw": st.get("raw"),
+                    }
+            else:
+                inactive_since = None
+            if i < (checks - 1):
+                time.sleep(poll)
+        status = str(last.get("status") or "").strip().lower()
+        return {
+            "ok": False,
+            "inactive": False,
+            "status": status or "unknown",
+            "stderr": str(last.get("stderr") or ""),
+            "raw": last.get("raw"),
+        }
+
+    def _teardown_airplay(self, actions: List[Dict[str, Any]]) -> None:
+        for unit in AIRPLAY_START_CANDIDATES:
+            r = self._systemctl("stop", unit, tolerate_missing=True)
+            r["action"] = "systemctl_stop"
+            r["unit"] = unit
+            actions.append(r)
+
+        checks: List[Dict[str, Any]] = []
+        for unit in AIRPLAY_START_CANDIDATES:
+            st = self._wait_for_service_inactive(unit, timeout=6.0, poll_interval=0.25, stable_seconds=0.75)
+            checks.append(st)
+            actions.append({"action": "systemctl_verify_inactive", "unit": unit, **st})
+        if all(bool(st.get("ok")) for st in checks):
+            return
+
+        # Fallback: aggressively terminate lingering shairport process, then verify again.
+        for sig in ("TERM", "KILL"):
+            for proc_name in AIRPLAY_PROCESS_NAMES:
+                r = self._pkill_exact(proc_name, signal_name=sig, timeout=2.5)
+                r["action"] = "pkill"
+                r["args"] = f"-{sig} -x {proc_name}"
+                actions.append(r)
+
+            post_checks: List[Dict[str, Any]] = []
+            for unit in AIRPLAY_START_CANDIDATES:
+                st = self._wait_for_service_inactive(unit, timeout=2.5, poll_interval=0.25, stable_seconds=0.5)
+                post_checks.append(st)
+                actions.append({"action": "systemctl_verify_inactive", "unit": unit, **st})
+            if all(bool(st.get("ok")) for st in post_checks):
+                return
+
+        actions.append(
+            {
+                "action": "airplay_teardown_warning",
+                "warning": "airplay service still active after stop/kill attempts",
+            }
+        )
 
     def _current_mode(self) -> str:
         raw = (DB.get_setting(SETTING_MEDIA_MODE, "") or "").strip().lower()
@@ -331,6 +424,10 @@ class AudioModeManager:
             r["action"] = "systemctl_stop"
             r["unit"] = unit
             actions.append(r)
+
+        # Leaving airplay mode should remove the advertised AirPlay receiver promptly.
+        if mode != "airplay":
+            self._teardown_airplay(actions)
 
         # Leaving bluetooth mode must fully tear down the BT audio path.
         if mode != "bluetooth":
@@ -455,6 +552,9 @@ class AudioModeManager:
             r["action"] = "systemctl_stop"
             r["unit"] = unit
             actions.append(r)
+
+        if mode != "airplay":
+            self._teardown_airplay(actions)
 
         if mode != "bluetooth":
             self._teardown_bluetooth(actions)
