@@ -1,42 +1,162 @@
+<p align="center">
+  <img src="/data/images/partybox_logo.png" width="320" />
+</p>
+
+<p align="center">
+  Self-hosted crowd-powered media appliance
+</p>
 # PartyBox
 
-PartyBox is a local-LAN music video appliance for bars, patios, lounges, and house parties.
+PartyBox turns any TV + Linux box into a self-hosted, crowd-powered music and video appliance.
 
-When people get together, they usually want one of two things:
-- Chill, hang out, and keep the room energy right.
-- Watch a game or event without killing the vibe.
+It runs on your LAN.
+It lives behind a TV.
+It lets the room influence what plays — without losing control.
 
-PartyBox is built for both. It keeps ambient music and visuals running, while still giving guests a fun way to pick what plays next.
+Originally built for a backyard kitchen project, it evolved into a properly engineered, mode-switching media system that behaves like a real appliance.
 
-Guests use a simple request page, the TV runs a fullscreen playback surface, and an admin page controls queue/state. The stack is intentionally small and reliable: Flask + SQLite + MPV controller + systemd + nginx.
+It’s what plays while:
+- people are building, cooking, arguing, or drinking
+- a football game is on but music still matters
+- someone insists “this song fits right now”
+- the vibe needs to shift without resetting the system
 
-## Why PartyBox
+It’s not radio.  
+It’s not just Spotify.  
+It’s not a rented bar jukebox.  
 
-- Music videos trigger nostalgia and shared memories in a way audio-only playlists often do not.
-- A visible queue makes the room feel participatory, like a modern jukebox.
-- Admin curation prevents low-quality, too-long, or off-brand content from getting through.
-- One tap can switch into Spotify mode when a single person should control the vibe (opening, closing, special moments, game focus).
+It’s your system.
 
-YouTube has millions of videos, but not all are right for a public venue. PartyBox lets administrators whitelist the good ones and keep the experience bar-appropriate: no NSFW surprises, no 15-minute live jam detours, no long dead-air intros.
+---
 
-Result: guests still choose what they want to hear and see, but inside rules that keep the room flowing.
+## The Idea
 
-## What It Does Today
+Let the crowd shape the vibe —  
+while the host keeps control.
 
-- Serves a guest request experience (`/u`, public alias via nginx at `/user`)
-- Serves a TV playback page (`/tv`)
-- Serves an admin panel (`/admin?key=...`)
-- Supports curated request mode (guest picks from approved catalog)
-- Supports Spotify mode (single-operator control)
-- Supports AirPlay receiver mode with best-effort now-playing metadata
-- Supports Bluetooth receiver mode with best-effort AVRCP metadata
-- Manages queue/catalog state in SQLite
-- Supports local files and YouTube-backed entries
-- Tracks unified play history across PartyBox, Spotify, AirPlay, and Bluetooth
-- Shows recent play history in Admin, including mode and device/user attribution
-- Exposes admin health APIs and an ops health-check script
-- Exposes Prometheus metrics (`/metrics`) plus liveness/readiness (`/healthz`, `/readyz`)
-- Runs as long-lived appliance services under systemd
+Guests request from their phones.  
+The TV becomes the shared surface.  
+The system runs locally and reliably.
+
+No cloud dependency required.  
+No recurring fees.  
+No vendor lock-in.
+
+---
+
+## Multi-Mode by Design
+
+The room doesn’t always need the same thing.
+
+PartyBox switches modes instantly:
+
+- `partybox` — curated, queue-driven music videos
+- `spotify` — controlled Spotify Connect sessions
+- `airplay` — direct streaming when needed
+- `bluetooth` — fallback receiver mode
+- `tv` — game or event mode
+- `mute` — because sometimes the boil needs to be heard
+
+This isn’t a playlist app.  
+It’s a mode-switching media surface.
+
+---
+
+## Why It Works in Real Spaces
+
+**Radio** is passive and generic.  
+**Raw Spotify** gets chaotic in a group.  
+**Bar jukeboxes** are expensive and locked down.
+
+PartyBox:
+
+- Makes the queue visible.
+- Lets guests participate.
+- Keeps the host in control.
+- Prevents off-brand or bad content.
+- Avoids 12-minute live jam detours.
+- Shifts energy without tearing down the system.
+
+Music videos change the room.  
+The TV becomes part of the gathering.
+
+---
+
+## What People Can Do With It
+
+### Guests
+
+- Open `/u` (or `/user`) on the same LAN.
+- Browse approved media.
+- Add to queue.
+- Participate without touching the TV remote.
+
+### Host / Admin
+
+- Use `/admin?key=...` as control center.
+- Pause, resume, skip, clear queue.
+- Lock requests or switch modes.
+- Review play history with mode and device attribution.
+- Monitor health and metrics.
+
+### TV
+
+- Run `/tv` as fullscreen display.
+- Show active mode and now-playing state.
+- Stay stable as an always-on surface.
+
+---
+
+## Feature Highlights
+
+- Curated guest-request flow (approved catalog only).
+- Multiple media modes with instant switching.
+- Unified play history across all modes.
+- Device/user attribution (where detectable).
+- Prometheus metrics (`/metrics`).
+- Health + readiness endpoints (`/healthz`, `/readyz`).
+- Grafana-ready dashboards and metric catalog.
+- Appliance-style operation via systemd services.
+- LAN-first design (no HTTPS required by default).
+
+Core stack:
+
+- Flask
+- SQLite
+- MPV
+- systemd
+- nginx
+
+---
+
+## How It’s Used In Practice
+
+1. Start in `partybox` mode for visible crowd participation.
+2. Switch to `spotify` for tighter control.
+3. Use `airplay` or `bluetooth` for direct streams.
+4. Flip to `tv` mode during games or events.
+5. Review admin history + metrics afterward.
+
+It never feels like switching systems.  
+Just switching modes.
+
+---
+
+## Public URL Contract
+
+Primary public base:
+
+`http://partybox.local`
+
+- `/` → redirect to `/user`
+- `/user` → redirect to `/u`
+- `/u` → guest request page
+- `/tv` → TV page
+- `/admin?key=JBOX` → admin page (example key)
+
+No HTTPS is required in current deployment (LAN-first model).
+
+---
 
 ## Runtime Architecture
 
@@ -44,64 +164,52 @@ Result: guests still choose what they want to hear and see, but inside rules tha
   - Runs Flask app as user `partybox`
   - `ExecStart=/home/user/projects/partybox/.venv/bin/python -m partybox.app`
   - Binds to `127.0.0.1:5000`
+
 - `partybox-player.service`
   - Runs MPV controller loop as user `partybox`
-- `nginx` (system service, root-managed)
+
+- `nginx`
   - Listens on HTTP `:80`
   - Reverse-proxies to `127.0.0.1:5000`
-  - Provides public URL contract at `http://partybox.local`
+  - Provides LAN URL contract
 
-## Public URL Contract
+It boots.
+It survives reboots.
+It exposes observability.
+It behaves like something mounted behind a TV.
 
-Primary public base: `http://partybox.local`
-
-- `http://partybox.local/` -> redirect to `/user`
-- `http://partybox.local/user` -> redirect to `/u`
-- `http://partybox.local/u` -> guest request page
-- `http://partybox.local/tv` -> TV page
-- `http://partybox.local/admin?key=JBOX` -> admin page (example key)
-
-No HTTPS is required in current deployment.
+---
 
 ## Documentation Map
 
 - Deployment and nginx contract: `docs/DEPLOYMENT.md`
-- Appliance build/install (Ubuntu/desktop/services): `docs/INSTALL_APPLIANCE.md`
-- Audio mode switching (PartyBox/Spotify/AirPlay/Bluetooth/TV/Mute): `docs/audio_modes.md`
-- Metrics, top-tracks strategy, and Grafana query notes: `docs/metrics.md`
-- Media-mode observability and metadata behavior: `docs/observability_and_media_modes.md`
-- Ops observability endpoints + scrape config: `docs/ops/observability.md`
+- Appliance build/install: `docs/INSTALL_APPLIANCE.md`
+- Audio modes: `docs/audio_modes.md`
+- Metrics + Grafana notes: `docs/metrics.md`
+- Media-mode observability: `docs/observability_and_media_modes.md`
+- Ops observability endpoints: `docs/ops/observability.md`
 - Quick install/run notes: `INSTALL.md`
 - UI styling notes: `docs/design-system.md`
 
 Grafana dashboard assets and metric dumps live in `ops/grafana/`.
 
-## Health Check
+---
 
-Use the repo script:
+## Health Check
 
 ```bash
 ./tools/health_check.sh
 ```
 
-It checks:
+Checks:
 
 - `nginx` service state
 - `partybox` service state
-- nginx endpoint behavior (`/tv`, `/u`, `/user`, `/admin?key=JBOX`)
-- direct Flask reachability (`127.0.0.1:5000/tv`)
-- kiosk desktop autostart entry for `/tv`
+- endpoint behavior (`/tv`, `/u`, `/admin`)
+- direct Flask reachability
+- kiosk autostart presence
 
-Script exits non-zero on failure.
-
-Install kiosk desktop autostart:
-
-```bash
-./tools/install_kiosk_autostart.sh partybox
-```
-
-Kiosk launcher defaults to suppress desktop notification banners (including Chromium update popups).  
-Set `PARTYBOX_KIOSK_DISABLE_DESKTOP_NOTIFICATIONS=0` before running installer if you want banners enabled.
+---
 
 ## Operational Commands
 
@@ -112,11 +220,18 @@ sudo systemctl status nginx
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-## Future Upgrades (Planned/Ideas)
+---
 
-- Replace querystring admin key auth with stronger auth/session model
-- Optional HTTPS and certificate automation for non-local deployments
-- Better observability (structured logs, persistent metrics snapshot)
-- Flask-first route parity for all public aliases (reduce nginx-only coupling)
-- Backup/restore tooling and migration automation
-- Improved media ingestion workflows (batch imports, validation, metadata)
+## Future Direction
+
+- Stronger admin authentication model
+- Optional HTTPS for internet exposure
+- Improved ingestion + catalog tooling
+- Backup/restore automation
+- Expanded observability
+
+---
+
+Built as a hobby.
+
+Engineered like it might need to survive a venue someday.
