@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="/data/images/partybox_logo.png" width="320" />
+  <img src="/data/images/partybox_t.png" width="320" />
 </p>
 
 <p align="center">
