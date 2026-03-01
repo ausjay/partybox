@@ -1,0 +1,542 @@
+# HELP python_gc_objects_collected_total Objects collected during gc
+# TYPE python_gc_objects_collected_total counter
+python_gc_objects_collected_total{generation="0"} 297538.0
+python_gc_objects_collected_total{generation="1"} 48355.0
+python_gc_objects_collected_total{generation="2"} 2174.0
+# HELP python_gc_objects_uncollectable_total Uncollectable objects found during GC
+# TYPE python_gc_objects_uncollectable_total counter
+python_gc_objects_uncollectable_total{generation="0"} 0.0
+python_gc_objects_uncollectable_total{generation="1"} 0.0
+python_gc_objects_uncollectable_total{generation="2"} 0.0
+# HELP python_gc_collections_total Number of times this generation was collected
+# TYPE python_gc_collections_total counter
+python_gc_collections_total{generation="0"} 588.0
+python_gc_collections_total{generation="1"} 53.0
+python_gc_collections_total{generation="2"} 2.0
+# HELP python_info Python platform information
+# TYPE python_info gauge
+python_info{implementation="CPython",major="3",minor="12",patchlevel="3",version="3.12.3"} 1.0
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes 4.18873344e+08
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes 1.19394304e+08
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds 1.77216491981e+09
+# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total 66.61
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+process_open_fds 34.0
+# HELP process_max_fds Maximum number of open file descriptors.
+# TYPE process_max_fds gauge
+process_max_fds 1024.0
+# HELP partybox_http_requests_total Total HTTP requests served by PartyBox.
+# TYPE partybox_http_requests_total counter
+partybox_http_requests_total{method="post",route="/api/tv/heartbeat",status="200"} 307.0
+partybox_http_requests_total{method="get",route="/api/state",status="200"} 983.0
+partybox_http_requests_total{method="get",route="/api/admin/media_mode_status",status="200"} 309.0
+partybox_http_requests_total{method="head",route="/tv",status="200"} 189.0
+partybox_http_requests_total{method="get",route="/api/queue",status="200"} 1286.0
+partybox_http_requests_total{method="head",route="/u",status="200"} 189.0
+partybox_http_requests_total{method="head",route="/admin",status="200"} 189.0
+partybox_http_requests_total{method="get",route="/api/admin/health",status="200"} 309.0
+partybox_http_requests_total{method="get",route="/api/tv/status",status="200"} 316.0
+partybox_http_requests_total{method="get",route="/api/history",status="200"} 221.0
+partybox_http_requests_total{method="get",route="/metrics",status="200"} 35.0
+partybox_http_requests_total{method="post",route="/api/tv/mark_done",status="200"} 1.0
+# HELP partybox_http_requests_created Total HTTP requests served by PartyBox.
+# TYPE partybox_http_requests_created gauge
+partybox_http_requests_created{method="post",route="/api/tv/heartbeat",status="200"} 1.7721649235884683e+09
+partybox_http_requests_created{method="get",route="/api/state",status="200"} 1.7721649236105883e+09
+partybox_http_requests_created{method="get",route="/api/admin/media_mode_status",status="200"} 1.772164923678685e+09
+partybox_http_requests_created{method="head",route="/tv",status="200"} 1.7721649238837156e+09
+partybox_http_requests_created{method="get",route="/api/queue",status="200"} 1.7721649238966143e+09
+partybox_http_requests_created{method="head",route="/u",status="200"} 1.772164923981618e+09
+partybox_http_requests_created{method="head",route="/admin",status="200"} 1.7721649240543427e+09
+partybox_http_requests_created{method="get",route="/api/admin/health",status="200"} 1.7721649240553544e+09
+partybox_http_requests_created{method="get",route="/api/tv/status",status="200"} 1.7721649244252224e+09
+partybox_http_requests_created{method="get",route="/api/history",status="200"} 1.772164925247901e+09
+partybox_http_requests_created{method="get",route="/metrics",status="200"} 1.77216493212324e+09
+partybox_http_requests_created{method="post",route="/api/tv/mark_done",status="200"} 1.7721649345714343e+09
+# HELP partybox_http_exceptions_total Total uncaught HTTP exceptions in PartyBox request handling.
+# TYPE partybox_http_exceptions_total counter
+# HELP partybox_http_request_duration_seconds HTTP request duration in seconds.
+# TYPE partybox_http_request_duration_seconds histogram
+partybox_http_request_duration_seconds_bucket{le="0.005",method="post",route="/api/tv/heartbeat"} 11.0
+partybox_http_request_duration_seconds_bucket{le="0.01",method="post",route="/api/tv/heartbeat"} 305.0
+partybox_http_request_duration_seconds_bucket{le="0.025",method="post",route="/api/tv/heartbeat"} 307.0
+partybox_http_request_duration_seconds_bucket{le="0.05",method="post",route="/api/tv/heartbeat"} 307.0
+partybox_http_request_duration_seconds_bucket{le="0.075",method="post",route="/api/tv/heartbeat"} 307.0
+partybox_http_request_duration_seconds_bucket{le="0.1",method="post",route="/api/tv/heartbeat"} 307.0
+partybox_http_request_duration_seconds_bucket{le="0.25",method="post",route="/api/tv/heartbeat"} 307.0
+partybox_http_request_duration_seconds_bucket{le="0.5",method="post",route="/api/tv/heartbeat"} 307.0
+partybox_http_request_duration_seconds_bucket{le="0.75",method="post",route="/api/tv/heartbeat"} 307.0
+partybox_http_request_duration_seconds_bucket{le="1.0",method="post",route="/api/tv/heartbeat"} 307.0
+partybox_http_request_duration_seconds_bucket{le="2.5",method="post",route="/api/tv/heartbeat"} 307.0
+partybox_http_request_duration_seconds_bucket{le="5.0",method="post",route="/api/tv/heartbeat"} 307.0
+partybox_http_request_duration_seconds_bucket{le="7.5",method="post",route="/api/tv/heartbeat"} 307.0
+partybox_http_request_duration_seconds_bucket{le="10.0",method="post",route="/api/tv/heartbeat"} 307.0
+partybox_http_request_duration_seconds_bucket{le="+Inf",method="post",route="/api/tv/heartbeat"} 307.0
+partybox_http_request_duration_seconds_count{method="post",route="/api/tv/heartbeat"} 307.0
+partybox_http_request_duration_seconds_sum{method="post",route="/api/tv/heartbeat"} 1.952591603883775
+partybox_http_request_duration_seconds_bucket{le="0.005",method="get",route="/api/state"} 120.0
+partybox_http_request_duration_seconds_bucket{le="0.01",method="get",route="/api/state"} 533.0
+partybox_http_request_duration_seconds_bucket{le="0.025",method="get",route="/api/state"} 674.0
+partybox_http_request_duration_seconds_bucket{le="0.05",method="get",route="/api/state"} 901.0
+partybox_http_request_duration_seconds_bucket{le="0.075",method="get",route="/api/state"} 928.0
+partybox_http_request_duration_seconds_bucket{le="0.1",method="get",route="/api/state"} 948.0
+partybox_http_request_duration_seconds_bucket{le="0.25",method="get",route="/api/state"} 983.0
+partybox_http_request_duration_seconds_bucket{le="0.5",method="get",route="/api/state"} 983.0
+partybox_http_request_duration_seconds_bucket{le="0.75",method="get",route="/api/state"} 983.0
+partybox_http_request_duration_seconds_bucket{le="1.0",method="get",route="/api/state"} 983.0
+partybox_http_request_duration_seconds_bucket{le="2.5",method="get",route="/api/state"} 983.0
+partybox_http_request_duration_seconds_bucket{le="5.0",method="get",route="/api/state"} 983.0
+partybox_http_request_duration_seconds_bucket{le="7.5",method="get",route="/api/state"} 983.0
+partybox_http_request_duration_seconds_bucket{le="10.0",method="get",route="/api/state"} 983.0
+partybox_http_request_duration_seconds_bucket{le="+Inf",method="get",route="/api/state"} 983.0
+partybox_http_request_duration_seconds_count{method="get",route="/api/state"} 983.0
+partybox_http_request_duration_seconds_sum{method="get",route="/api/state"} 21.43318181714858
+partybox_http_request_duration_seconds_bucket{le="0.005",method="get",route="/api/admin/media_mode_status"} 0.0
+partybox_http_request_duration_seconds_bucket{le="0.01",method="get",route="/api/admin/media_mode_status"} 0.0
+partybox_http_request_duration_seconds_bucket{le="0.025",method="get",route="/api/admin/media_mode_status"} 0.0
+partybox_http_request_duration_seconds_bucket{le="0.05",method="get",route="/api/admin/media_mode_status"} 0.0
+partybox_http_request_duration_seconds_bucket{le="0.075",method="get",route="/api/admin/media_mode_status"} 170.0
+partybox_http_request_duration_seconds_bucket{le="0.1",method="get",route="/api/admin/media_mode_status"} 220.0
+partybox_http_request_duration_seconds_bucket{le="0.25",method="get",route="/api/admin/media_mode_status"} 309.0
+partybox_http_request_duration_seconds_bucket{le="0.5",method="get",route="/api/admin/media_mode_status"} 309.0
+partybox_http_request_duration_seconds_bucket{le="0.75",method="get",route="/api/admin/media_mode_status"} 309.0
+partybox_http_request_duration_seconds_bucket{le="1.0",method="get",route="/api/admin/media_mode_status"} 309.0
+partybox_http_request_duration_seconds_bucket{le="2.5",method="get",route="/api/admin/media_mode_status"} 309.0
+partybox_http_request_duration_seconds_bucket{le="5.0",method="get",route="/api/admin/media_mode_status"} 309.0
+partybox_http_request_duration_seconds_bucket{le="7.5",method="get",route="/api/admin/media_mode_status"} 309.0
+partybox_http_request_duration_seconds_bucket{le="10.0",method="get",route="/api/admin/media_mode_status"} 309.0
+partybox_http_request_duration_seconds_bucket{le="+Inf",method="get",route="/api/admin/media_mode_status"} 309.0
+partybox_http_request_duration_seconds_count{method="get",route="/api/admin/media_mode_status"} 309.0
+partybox_http_request_duration_seconds_sum{method="get",route="/api/admin/media_mode_status"} 28.217243763894658
+partybox_http_request_duration_seconds_bucket{le="0.005",method="head",route="/tv"} 187.0
+partybox_http_request_duration_seconds_bucket{le="0.01",method="head",route="/tv"} 188.0
+partybox_http_request_duration_seconds_bucket{le="0.025",method="head",route="/tv"} 189.0
+partybox_http_request_duration_seconds_bucket{le="0.05",method="head",route="/tv"} 189.0
+partybox_http_request_duration_seconds_bucket{le="0.075",method="head",route="/tv"} 189.0
+partybox_http_request_duration_seconds_bucket{le="0.1",method="head",route="/tv"} 189.0
+partybox_http_request_duration_seconds_bucket{le="0.25",method="head",route="/tv"} 189.0
+partybox_http_request_duration_seconds_bucket{le="0.5",method="head",route="/tv"} 189.0
+partybox_http_request_duration_seconds_bucket{le="0.75",method="head",route="/tv"} 189.0
+partybox_http_request_duration_seconds_bucket{le="1.0",method="head",route="/tv"} 189.0
+partybox_http_request_duration_seconds_bucket{le="2.5",method="head",route="/tv"} 189.0
+partybox_http_request_duration_seconds_bucket{le="5.0",method="head",route="/tv"} 189.0
+partybox_http_request_duration_seconds_bucket{le="7.5",method="head",route="/tv"} 189.0
+partybox_http_request_duration_seconds_bucket{le="10.0",method="head",route="/tv"} 189.0
+partybox_http_request_duration_seconds_bucket{le="+Inf",method="head",route="/tv"} 189.0
+partybox_http_request_duration_seconds_count{method="head",route="/tv"} 189.0
+partybox_http_request_duration_seconds_sum{method="head",route="/tv"} 0.065034737897804
+partybox_http_request_duration_seconds_bucket{le="0.005",method="get",route="/api/queue"} 1282.0
+partybox_http_request_duration_seconds_bucket{le="0.01",method="get",route="/api/queue"} 1285.0
+partybox_http_request_duration_seconds_bucket{le="0.025",method="get",route="/api/queue"} 1286.0
+partybox_http_request_duration_seconds_bucket{le="0.05",method="get",route="/api/queue"} 1286.0
+partybox_http_request_duration_seconds_bucket{le="0.075",method="get",route="/api/queue"} 1286.0
+partybox_http_request_duration_seconds_bucket{le="0.1",method="get",route="/api/queue"} 1286.0
+partybox_http_request_duration_seconds_bucket{le="0.25",method="get",route="/api/queue"} 1286.0
+partybox_http_request_duration_seconds_bucket{le="0.5",method="get",route="/api/queue"} 1286.0
+partybox_http_request_duration_seconds_bucket{le="0.75",method="get",route="/api/queue"} 1286.0
+partybox_http_request_duration_seconds_bucket{le="1.0",method="get",route="/api/queue"} 1286.0
+partybox_http_request_duration_seconds_bucket{le="2.5",method="get",route="/api/queue"} 1286.0
+partybox_http_request_duration_seconds_bucket{le="5.0",method="get",route="/api/queue"} 1286.0
+partybox_http_request_duration_seconds_bucket{le="7.5",method="get",route="/api/queue"} 1286.0
+partybox_http_request_duration_seconds_bucket{le="10.0",method="get",route="/api/queue"} 1286.0
+partybox_http_request_duration_seconds_bucket{le="+Inf",method="get",route="/api/queue"} 1286.0
+partybox_http_request_duration_seconds_count{method="get",route="/api/queue"} 1286.0
+partybox_http_request_duration_seconds_sum{method="get",route="/api/queue"} 1.444689247146016
+partybox_http_request_duration_seconds_bucket{le="0.005",method="head",route="/u"} 121.0
+partybox_http_request_duration_seconds_bucket{le="0.01",method="head",route="/u"} 169.0
+partybox_http_request_duration_seconds_bucket{le="0.025",method="head",route="/u"} 188.0
+partybox_http_request_duration_seconds_bucket{le="0.05",method="head",route="/u"} 189.0
+partybox_http_request_duration_seconds_bucket{le="0.075",method="head",route="/u"} 189.0
+partybox_http_request_duration_seconds_bucket{le="0.1",method="head",route="/u"} 189.0
+partybox_http_request_duration_seconds_bucket{le="0.25",method="head",route="/u"} 189.0
+partybox_http_request_duration_seconds_bucket{le="0.5",method="head",route="/u"} 189.0
+partybox_http_request_duration_seconds_bucket{le="0.75",method="head",route="/u"} 189.0
+partybox_http_request_duration_seconds_bucket{le="1.0",method="head",route="/u"} 189.0
+partybox_http_request_duration_seconds_bucket{le="2.5",method="head",route="/u"} 189.0
+partybox_http_request_duration_seconds_bucket{le="5.0",method="head",route="/u"} 189.0
+partybox_http_request_duration_seconds_bucket{le="7.5",method="head",route="/u"} 189.0
+partybox_http_request_duration_seconds_bucket{le="10.0",method="head",route="/u"} 189.0
+partybox_http_request_duration_seconds_bucket{le="+Inf",method="head",route="/u"} 189.0
+partybox_http_request_duration_seconds_count{method="head",route="/u"} 189.0
+partybox_http_request_duration_seconds_sum{method="head",route="/u"} 0.9693093879322987
+partybox_http_request_duration_seconds_bucket{le="0.005",method="head",route="/admin"} 87.0
+partybox_http_request_duration_seconds_bucket{le="0.01",method="head",route="/admin"} 115.0
+partybox_http_request_duration_seconds_bucket{le="0.025",method="head",route="/admin"} 186.0
+partybox_http_request_duration_seconds_bucket{le="0.05",method="head",route="/admin"} 189.0
+partybox_http_request_duration_seconds_bucket{le="0.075",method="head",route="/admin"} 189.0
+partybox_http_request_duration_seconds_bucket{le="0.1",method="head",route="/admin"} 189.0
+partybox_http_request_duration_seconds_bucket{le="0.25",method="head",route="/admin"} 189.0
+partybox_http_request_duration_seconds_bucket{le="0.5",method="head",route="/admin"} 189.0
+partybox_http_request_duration_seconds_bucket{le="0.75",method="head",route="/admin"} 189.0
+partybox_http_request_duration_seconds_bucket{le="1.0",method="head",route="/admin"} 189.0
+partybox_http_request_duration_seconds_bucket{le="2.5",method="head",route="/admin"} 189.0
+partybox_http_request_duration_seconds_bucket{le="5.0",method="head",route="/admin"} 189.0
+partybox_http_request_duration_seconds_bucket{le="7.5",method="head",route="/admin"} 189.0
+partybox_http_request_duration_seconds_bucket{le="10.0",method="head",route="/admin"} 189.0
+partybox_http_request_duration_seconds_bucket{le="+Inf",method="head",route="/admin"} 189.0
+partybox_http_request_duration_seconds_count{method="head",route="/admin"} 189.0
+partybox_http_request_duration_seconds_sum{method="head",route="/admin"} 1.7266018060036004
+partybox_http_request_duration_seconds_bucket{le="0.005",method="get",route="/api/admin/health"} 120.0
+partybox_http_request_duration_seconds_bucket{le="0.01",method="get",route="/api/admin/health"} 120.0
+partybox_http_request_duration_seconds_bucket{le="0.025",method="get",route="/api/admin/health"} 120.0
+partybox_http_request_duration_seconds_bucket{le="0.05",method="get",route="/api/admin/health"} 120.0
+partybox_http_request_duration_seconds_bucket{le="0.075",method="get",route="/api/admin/health"} 120.0
+partybox_http_request_duration_seconds_bucket{le="0.1",method="get",route="/api/admin/health"} 120.0
+partybox_http_request_duration_seconds_bucket{le="0.25",method="get",route="/api/admin/health"} 120.0
+partybox_http_request_duration_seconds_bucket{le="0.5",method="get",route="/api/admin/health"} 261.0
+partybox_http_request_duration_seconds_bucket{le="0.75",method="get",route="/api/admin/health"} 309.0
+partybox_http_request_duration_seconds_bucket{le="1.0",method="get",route="/api/admin/health"} 309.0
+partybox_http_request_duration_seconds_bucket{le="2.5",method="get",route="/api/admin/health"} 309.0
+partybox_http_request_duration_seconds_bucket{le="5.0",method="get",route="/api/admin/health"} 309.0
+partybox_http_request_duration_seconds_bucket{le="7.5",method="get",route="/api/admin/health"} 309.0
+partybox_http_request_duration_seconds_bucket{le="10.0",method="get",route="/api/admin/health"} 309.0
+partybox_http_request_duration_seconds_bucket{le="+Inf",method="get",route="/api/admin/health"} 309.0
+partybox_http_request_duration_seconds_count{method="get",route="/api/admin/health"} 309.0
+partybox_http_request_duration_seconds_sum{method="get",route="/api/admin/health"} 86.38415275006264
+partybox_http_request_duration_seconds_bucket{le="0.005",method="get",route="/api/tv/status"} 65.0
+partybox_http_request_duration_seconds_bucket{le="0.01",method="get",route="/api/tv/status"} 212.0
+partybox_http_request_duration_seconds_bucket{le="0.025",method="get",route="/api/tv/status"} 301.0
+partybox_http_request_duration_seconds_bucket{le="0.05",method="get",route="/api/tv/status"} 315.0
+partybox_http_request_duration_seconds_bucket{le="0.075",method="get",route="/api/tv/status"} 316.0
+partybox_http_request_duration_seconds_bucket{le="0.1",method="get",route="/api/tv/status"} 316.0
+partybox_http_request_duration_seconds_bucket{le="0.25",method="get",route="/api/tv/status"} 316.0
+partybox_http_request_duration_seconds_bucket{le="0.5",method="get",route="/api/tv/status"} 316.0
+partybox_http_request_duration_seconds_bucket{le="0.75",method="get",route="/api/tv/status"} 316.0
+partybox_http_request_duration_seconds_bucket{le="1.0",method="get",route="/api/tv/status"} 316.0
+partybox_http_request_duration_seconds_bucket{le="2.5",method="get",route="/api/tv/status"} 316.0
+partybox_http_request_duration_seconds_bucket{le="5.0",method="get",route="/api/tv/status"} 316.0
+partybox_http_request_duration_seconds_bucket{le="7.5",method="get",route="/api/tv/status"} 316.0
+partybox_http_request_duration_seconds_bucket{le="10.0",method="get",route="/api/tv/status"} 316.0
+partybox_http_request_duration_seconds_bucket{le="+Inf",method="get",route="/api/tv/status"} 316.0
+partybox_http_request_duration_seconds_count{method="get",route="/api/tv/status"} 316.0
+partybox_http_request_duration_seconds_sum{method="get",route="/api/tv/status"} 2.8461839590308955
+partybox_http_request_duration_seconds_bucket{le="0.005",method="get",route="/api/history"} 210.0
+partybox_http_request_duration_seconds_bucket{le="0.01",method="get",route="/api/history"} 219.0
+partybox_http_request_duration_seconds_bucket{le="0.025",method="get",route="/api/history"} 221.0
+partybox_http_request_duration_seconds_bucket{le="0.05",method="get",route="/api/history"} 221.0
+partybox_http_request_duration_seconds_bucket{le="0.075",method="get",route="/api/history"} 221.0
+partybox_http_request_duration_seconds_bucket{le="0.1",method="get",route="/api/history"} 221.0
+partybox_http_request_duration_seconds_bucket{le="0.25",method="get",route="/api/history"} 221.0
+partybox_http_request_duration_seconds_bucket{le="0.5",method="get",route="/api/history"} 221.0
+partybox_http_request_duration_seconds_bucket{le="0.75",method="get",route="/api/history"} 221.0
+partybox_http_request_duration_seconds_bucket{le="1.0",method="get",route="/api/history"} 221.0
+partybox_http_request_duration_seconds_bucket{le="2.5",method="get",route="/api/history"} 221.0
+partybox_http_request_duration_seconds_bucket{le="5.0",method="get",route="/api/history"} 221.0
+partybox_http_request_duration_seconds_bucket{le="7.5",method="get",route="/api/history"} 221.0
+partybox_http_request_duration_seconds_bucket{le="10.0",method="get",route="/api/history"} 221.0
+partybox_http_request_duration_seconds_bucket{le="+Inf",method="get",route="/api/history"} 221.0
+partybox_http_request_duration_seconds_count{method="get",route="/api/history"} 221.0
+partybox_http_request_duration_seconds_sum{method="get",route="/api/history"} 0.4801777150860289
+partybox_http_request_duration_seconds_bucket{le="0.005",method="get",route="/metrics"} 1.0
+partybox_http_request_duration_seconds_bucket{le="0.01",method="get",route="/metrics"} 8.0
+partybox_http_request_duration_seconds_bucket{le="0.025",method="get",route="/metrics"} 18.0
+partybox_http_request_duration_seconds_bucket{le="0.05",method="get",route="/metrics"} 33.0
+partybox_http_request_duration_seconds_bucket{le="0.075",method="get",route="/metrics"} 34.0
+partybox_http_request_duration_seconds_bucket{le="0.1",method="get",route="/metrics"} 34.0
+partybox_http_request_duration_seconds_bucket{le="0.25",method="get",route="/metrics"} 35.0
+partybox_http_request_duration_seconds_bucket{le="0.5",method="get",route="/metrics"} 35.0
+partybox_http_request_duration_seconds_bucket{le="0.75",method="get",route="/metrics"} 35.0
+partybox_http_request_duration_seconds_bucket{le="1.0",method="get",route="/metrics"} 35.0
+partybox_http_request_duration_seconds_bucket{le="2.5",method="get",route="/metrics"} 35.0
+partybox_http_request_duration_seconds_bucket{le="5.0",method="get",route="/metrics"} 35.0
+partybox_http_request_duration_seconds_bucket{le="7.5",method="get",route="/metrics"} 35.0
+partybox_http_request_duration_seconds_bucket{le="10.0",method="get",route="/metrics"} 35.0
+partybox_http_request_duration_seconds_bucket{le="+Inf",method="get",route="/metrics"} 35.0
+partybox_http_request_duration_seconds_count{method="get",route="/metrics"} 35.0
+partybox_http_request_duration_seconds_sum{method="get",route="/metrics"} 0.8713142509950558
+partybox_http_request_duration_seconds_bucket{le="0.005",method="post",route="/api/tv/mark_done"} 0.0
+partybox_http_request_duration_seconds_bucket{le="0.01",method="post",route="/api/tv/mark_done"} 1.0
+partybox_http_request_duration_seconds_bucket{le="0.025",method="post",route="/api/tv/mark_done"} 1.0
+partybox_http_request_duration_seconds_bucket{le="0.05",method="post",route="/api/tv/mark_done"} 1.0
+partybox_http_request_duration_seconds_bucket{le="0.075",method="post",route="/api/tv/mark_done"} 1.0
+partybox_http_request_duration_seconds_bucket{le="0.1",method="post",route="/api/tv/mark_done"} 1.0
+partybox_http_request_duration_seconds_bucket{le="0.25",method="post",route="/api/tv/mark_done"} 1.0
+partybox_http_request_duration_seconds_bucket{le="0.5",method="post",route="/api/tv/mark_done"} 1.0
+partybox_http_request_duration_seconds_bucket{le="0.75",method="post",route="/api/tv/mark_done"} 1.0
+partybox_http_request_duration_seconds_bucket{le="1.0",method="post",route="/api/tv/mark_done"} 1.0
+partybox_http_request_duration_seconds_bucket{le="2.5",method="post",route="/api/tv/mark_done"} 1.0
+partybox_http_request_duration_seconds_bucket{le="5.0",method="post",route="/api/tv/mark_done"} 1.0
+partybox_http_request_duration_seconds_bucket{le="7.5",method="post",route="/api/tv/mark_done"} 1.0
+partybox_http_request_duration_seconds_bucket{le="10.0",method="post",route="/api/tv/mark_done"} 1.0
+partybox_http_request_duration_seconds_bucket{le="+Inf",method="post",route="/api/tv/mark_done"} 1.0
+partybox_http_request_duration_seconds_count{method="post",route="/api/tv/mark_done"} 1.0
+partybox_http_request_duration_seconds_sum{method="post",route="/api/tv/mark_done"} 0.009946662001311779
+# HELP partybox_http_request_duration_seconds_created HTTP request duration in seconds.
+# TYPE partybox_http_request_duration_seconds_created gauge
+partybox_http_request_duration_seconds_created{method="post",route="/api/tv/heartbeat"} 1.7721649235886195e+09
+partybox_http_request_duration_seconds_created{method="get",route="/api/state"} 1.7721649236106887e+09
+partybox_http_request_duration_seconds_created{method="get",route="/api/admin/media_mode_status"} 1.772164923678706e+09
+partybox_http_request_duration_seconds_created{method="head",route="/tv"} 1.7721649238837888e+09
+partybox_http_request_duration_seconds_created{method="get",route="/api/queue"} 1.7721649238967001e+09
+partybox_http_request_duration_seconds_created{method="head",route="/u"} 1.7721649239816601e+09
+partybox_http_request_duration_seconds_created{method="head",route="/admin"} 1.7721649240543628e+09
+partybox_http_request_duration_seconds_created{method="get",route="/api/admin/health"} 1.7721649240553734e+09
+partybox_http_request_duration_seconds_created{method="get",route="/api/tv/status"} 1.7721649244253037e+09
+partybox_http_request_duration_seconds_created{method="get",route="/api/history"} 1.772164925247995e+09
+partybox_http_request_duration_seconds_created{method="get",route="/metrics"} 1.7721649321232972e+09
+partybox_http_request_duration_seconds_created{method="post",route="/api/tv/mark_done"} 1.7721649345715394e+09
+# HELP partybox_mode Active PartyBox mode. Exactly one mode should be 1.
+# TYPE partybox_mode gauge
+partybox_mode{mode="partybox"} 1.0
+partybox_mode{mode="spotify"} 0.0
+partybox_mode{mode="airplay"} 0.0
+partybox_mode{mode="bluetooth"} 0.0
+partybox_mode{mode="tv"} 0.0
+partybox_mode{mode="mute"} 0.0
+# HELP partybox_queue_depth Current number of queued/playing items.
+# TYPE partybox_queue_depth gauge
+partybox_queue_depth 0.0
+# HELP partybox_queue_add_total Total queue add operations.
+# TYPE partybox_queue_add_total counter
+# HELP partybox_queue_play_total Total queue item play starts.
+# TYPE partybox_queue_play_total counter
+partybox_queue_play_total 0.0
+# HELP partybox_queue_play_created Total queue item play starts.
+# TYPE partybox_queue_play_created gauge
+partybox_queue_play_created 1.7721649201089776e+09
+# HELP partybox_spotify_ok Spotify backend health from current cached/live state (1=ok, 0=not ok).
+# TYPE partybox_spotify_ok gauge
+partybox_spotify_ok 1.0
+# HELP partybox_spotify_api_requests_total Spotify API request count by endpoint and status.
+# TYPE partybox_spotify_api_requests_total counter
+# HELP partybox_spotify_rate_limited_total Number of Spotify 429 responses seen (legacy name).
+# TYPE partybox_spotify_rate_limited_total counter
+partybox_spotify_rate_limited_total 0.0
+# HELP partybox_spotify_rate_limited_created Number of Spotify 429 responses seen (legacy name).
+# TYPE partybox_spotify_rate_limited_created gauge
+partybox_spotify_rate_limited_created 1.7721649201090136e+09
+# HELP partybox_spotify_rate_limit_total Number of Spotify 429 responses seen.
+# TYPE partybox_spotify_rate_limit_total counter
+partybox_spotify_rate_limit_total 0.0
+# HELP partybox_spotify_rate_limit_created Number of Spotify 429 responses seen.
+# TYPE partybox_spotify_rate_limit_created gauge
+partybox_spotify_rate_limit_created 1.7721649201090202e+09
+# HELP partybox_spotify_api_errors_total Spotify API error responses by status.
+# TYPE partybox_spotify_api_errors_total counter
+# HELP partybox_spotify_last_rate_limit_retry_after_seconds Last seen Spotify retry-after (seconds) when rate limited.
+# TYPE partybox_spotify_last_rate_limit_retry_after_seconds gauge
+partybox_spotify_last_rate_limit_retry_after_seconds 0.0
+# HELP partybox_spotify_device_visible Whether a Spotify playback device is visible in current state.
+# TYPE partybox_spotify_device_visible gauge
+partybox_spotify_device_visible 0.0
+# HELP partybox_tv_ok TV integration health (heartbeat/status based).
+# TYPE partybox_tv_ok gauge
+partybox_tv_ok 1.0
+# HELP partybox_tv_commands_total TV command count.
+# TYPE partybox_tv_commands_total counter
+partybox_tv_commands_total{cmd="mark_done"} 1.0
+# HELP partybox_tv_commands_created TV command count.
+# TYPE partybox_tv_commands_created gauge
+partybox_tv_commands_created{cmd="mark_done"} 1.7721649345702183e+09
+# HELP partybox_tv_errors_total TV error count.
+# TYPE partybox_tv_errors_total counter
+# HELP partybox_db_ok SQLite DB health for metrics/play-history operations (1=ok, 0=error).
+# TYPE partybox_db_ok gauge
+partybox_db_ok 1.0
+# HELP partybox_last_mode_change_timestamp_seconds Unix timestamp for the last successful media mode change.
+# TYPE partybox_last_mode_change_timestamp_seconds gauge
+partybox_last_mode_change_timestamp_seconds 1.772164923e+09
+# HELP partybox_spotify_last_success_timestamp_seconds Unix timestamp of last successful Spotify state fetch.
+# TYPE partybox_spotify_last_success_timestamp_seconds gauge
+partybox_spotify_last_success_timestamp_seconds 1.772165869e+09
+# HELP partybox_last_queue_add_timestamp_seconds Unix timestamp of most recent queue add operation.
+# TYPE partybox_last_queue_add_timestamp_seconds gauge
+partybox_last_queue_add_timestamp_seconds 0.0
+# HELP partybox_last_error_timestamp_seconds Unix timestamp of most recent application error event.
+# TYPE partybox_last_error_timestamp_seconds gauge
+partybox_last_error_timestamp_seconds 0.0
+# HELP partybox_external_stream_active Whether external receiver stream appears active by mode (airplay/bluetooth).
+# TYPE partybox_external_stream_active gauge
+partybox_external_stream_active{mode="airplay"} 0.0
+partybox_external_stream_active{mode="bluetooth"} 0.0
+# HELP partybox_external_metadata_available Whether metadata is currently available for external receiver mode.
+# TYPE partybox_external_metadata_available gauge
+partybox_external_metadata_available{mode="airplay"} 0.0
+partybox_external_metadata_available{mode="bluetooth"} 0.0
+# HELP partybox_external_last_play_timestamp_seconds Unix timestamp of last logged external play event by mode.
+# TYPE partybox_external_last_play_timestamp_seconds gauge
+partybox_external_last_play_timestamp_seconds{mode="airplay"} 0.0
+partybox_external_last_play_timestamp_seconds{mode="bluetooth"} 0.0
+# HELP partybox_play_history_events_total Total play-history events persisted by mode.
+# TYPE partybox_play_history_events_total counter
+# HELP partybox_top_item_plays Current top item play counts by mode/rank.
+# TYPE partybox_top_item_plays gauge
+partybox_top_item_plays{mode="partybox",rank="01",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="02",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="03",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="04",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="05",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="06",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="07",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="08",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="09",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="10",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="11",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="12",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="13",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="14",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="15",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="16",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="17",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="18",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="19",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="20",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="21",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="22",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="23",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="24",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="25",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="01",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="02",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="03",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="04",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="05",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="06",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="07",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="08",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="09",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="10",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="11",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="12",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="13",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="14",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="15",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="16",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="17",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="18",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="19",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="20",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="21",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="22",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="23",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="24",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="spotify",rank="25",track_id="(none)"} 0.0
+partybox_top_item_plays{mode="partybox",rank="01",track_id="9zl27aiw9_i"} 2.0
+partybox_top_item_plays{mode="partybox",rank="02",track_id="ekbk7bpxba4"} 1.0
+partybox_top_item_plays{mode="partybox",rank="03",track_id="wg1pytowl6c"} 1.0
+partybox_top_item_plays{mode="partybox",rank="04",track_id="file:lonely_boy.mp4"} 1.0
+partybox_top_item_plays{mode="partybox",rank="05",track_id="zzi0zo2ts1y"} 1.0
+partybox_top_item_plays{mode="partybox",rank="06",track_id="pd656b8w9mk"} 1.0
+partybox_top_item_plays{mode="spotify",rank="01",track_id="2upni0lioo6trcttrrtvsx"} 2.0
+partybox_top_item_plays{mode="spotify",rank="02",track_id="09n5oiitfoyyl5s4ztn9pe"} 1.0
+partybox_top_item_plays{mode="spotify",rank="03",track_id="1rihxz9g1xmfsxszfekmaq"} 1.0
+partybox_top_item_plays{mode="spotify",rank="04",track_id="1glzqflonwqij3hijdxmxo"} 1.0
+partybox_top_item_plays{mode="spotify",rank="05",track_id="65djcr0by2s8w1mdl270yj"} 1.0
+partybox_top_item_plays{mode="spotify",rank="06",track_id="2jg8qg7kdywkm9smycxz1i"} 1.0
+partybox_top_item_plays{mode="spotify",rank="07",track_id="5q5cew3fetzrqyiyzxir8l"} 1.0
+partybox_top_item_plays{mode="spotify",rank="08",track_id="50emgupm363qirybe20fr3"} 1.0
+partybox_top_item_plays{mode="spotify",rank="09",track_id="5z8koliqhnzz2vnjyd3qp7"} 1.0
+partybox_top_item_plays{mode="spotify",rank="10",track_id="3ilu5gmuqs73z4c2u43xoj"} 1.0
+partybox_top_item_plays{mode="spotify",rank="11",track_id="7dhnvfxljnwvllglr6lmlc"} 1.0
+partybox_top_item_plays{mode="spotify",rank="12",track_id="54md82rohcsrlc2ns3xchq"} 1.0
+partybox_top_item_plays{mode="spotify",rank="13",track_id="738oxpa234cxaqkh9bpha4"} 1.0
+partybox_top_item_plays{mode="spotify",rank="14",track_id="1pwdkihxuq7i2xtdswhmda"} 1.0
+partybox_top_item_plays{mode="spotify",rank="15",track_id="5u11hvcqqabhx3uqf6iwyo"} 1.0
+partybox_top_item_plays{mode="spotify",rank="16",track_id="7iqj4j24zprk1xs1rbfk2h"} 1.0
+partybox_top_item_plays{mode="spotify",rank="17",track_id="0h7ror8cztsh6yugnlqjm2"} 1.0
+partybox_top_item_plays{mode="spotify",rank="18",track_id="6lngqqeos6i2kxisbn24xc"} 1.0
+partybox_top_item_plays{mode="spotify",rank="19",track_id="4zmv52fyookcsrrhqovtps"} 1.0
+partybox_top_item_plays{mode="spotify",rank="20",track_id="4si6ia4b6l5j1n6k42wehc"} 1.0
+partybox_top_item_plays{mode="spotify",rank="21",track_id="7djz3v8dputj7t1fw2knzv"} 1.0
+partybox_top_item_plays{mode="spotify",rank="22",track_id="67otbqgd9segkylhxs5xbg"} 1.0
+partybox_top_item_plays{mode="spotify",rank="23",track_id="0kzco6yesnfgjm1sgh84ef"} 1.0
+partybox_top_item_plays{mode="spotify",rank="24",track_id="6w0mhavldzn6idmdajfydr"} 1.0
+partybox_top_item_plays{mode="spotify",rank="25",track_id="7h8oas8wkjunyljsuc53gv"} 1.0
+# HELP partybox_top_item_info Current top item metadata by mode/rank.
+# TYPE partybox_top_item_info gauge
+partybox_top_item_info{artist="",mode="partybox",rank="01",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="partybox",rank="02",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="partybox",rank="03",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="partybox",rank="04",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="partybox",rank="05",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="partybox",rank="06",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="partybox",rank="07",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="08",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="09",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="10",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="11",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="12",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="13",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="14",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="15",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="16",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="17",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="18",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="19",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="20",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="21",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="22",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="23",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="24",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="25",title="",track_id="(none)"} 1.0
+partybox_top_item_info{artist="",mode="spotify",rank="01",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="02",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="03",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="04",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="05",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="06",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="07",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="08",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="09",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="10",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="11",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="12",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="13",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="14",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="15",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="16",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="17",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="18",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="19",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="20",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="21",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="22",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="23",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="24",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="spotify",rank="25",title="",track_id="(none)"} 0.0
+partybox_top_item_info{artist="",mode="partybox",rank="01",title="The Toadies - Backslider",track_id="9zl27aiw9_i"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="02",title="The Toadies - Tyler",track_id="ekbk7bpxba4"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="03",title="Charlie Robison - My Hometown (Video)",track_id="wg1pytowl6c"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="04",title="Lonely Boy",track_id="file:lonely_boy.mp4"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="05",title="Lyle Lovett:  Church",track_id="zzi0zo2ts1y"} 1.0
+partybox_top_item_info{artist="",mode="partybox",rank="06",title="RYAN BINGHAM - \"Nobody Knows My Trouble\" (Live in West Hollywood, CA) #JAMINTHEVAN",track_id="pd656b8w9mk"} 1.0
+partybox_top_item_info{artist="Trampled by Turtles",mode="spotify",rank="01",title="The Outskirts",track_id="2upni0lioo6trcttrrtvsx"} 1.0
+partybox_top_item_info{artist="Drive-By Truckers",mode="spotify",rank="02",title="Gravity's Gone",track_id="09n5oiitfoyyl5s4ztn9pe"} 1.0
+partybox_top_item_info{artist="Trampled by Turtles",mode="spotify",rank="03",title="Life Is Good on the Open Road",track_id="1rihxz9g1xmfsxszfekmaq"} 1.0
+partybox_top_item_info{artist="The Steeldrivers",mode="spotify",rank="04",title="The Price",track_id="1glzqflonwqij3hijdxmxo"} 1.0
+partybox_top_item_info{artist="Kaitlin Butts",mode="spotify",rank="05",title="How Lucky Am I",track_id="65djcr0by2s8w1mdl270yj"} 1.0
+partybox_top_item_info{artist="James McMurtry",mode="spotify",rank="06",title="Copper Canteen",track_id="2jg8qg7kdywkm9smycxz1i"} 1.0
+partybox_top_item_info{artist="The Red Clay Strays",mode="spotify",rank="07",title="People Hatin'",track_id="5q5cew3fetzrqyiyzxir8l"} 1.0
+partybox_top_item_info{artist="Zach Bryan",mode="spotify",rank="08",title="Quittin' Time",track_id="50emgupm363qirybe20fr3"} 1.0
+partybox_top_item_info{artist="Trampled by Turtles",mode="spotify",rank="09",title="When I Come Back Again",track_id="5z8koliqhnzz2vnjyd3qp7"} 1.0
+partybox_top_item_info{artist="Charlie Robison",mode="spotify",rank="10",title="Big City Blues",track_id="3ilu5gmuqs73z4c2u43xoj"} 1.0
+partybox_top_item_info{artist="Whiskey Myers",mode="spotify",rank="11",title="Heart of Stone",track_id="7dhnvfxljnwvllglr6lmlc"} 1.0
+partybox_top_item_info{artist="Clay Street Unit",mode="spotify",rank="12",title="Engine Trouble",track_id="54md82rohcsrlc2ns3xchq"} 1.0
+partybox_top_item_info{artist="The Red Clay Strays",mode="spotify",rank="13",title="She's No Good",track_id="738oxpa234cxaqkh9bpha4"} 1.0
+partybox_top_item_info{artist="Trout Steak Revival",mode="spotify",rank="14",title="Brighter Every Day",track_id="1pwdkihxuq7i2xtdswhmda"} 1.0
+partybox_top_item_info{artist="Trampled by Turtles",mode="spotify",rank="15",title="We All Get Lonely",track_id="5u11hvcqqabhx3uqf6iwyo"} 1.0
+partybox_top_item_info{artist="James McMurtry",mode="spotify",rank="16",title="Just Us Kids",track_id="7iqj4j24zprk1xs1rbfk2h"} 1.0
+partybox_top_item_info{artist="The Steeldrivers",mode="spotify",rank="17",title="Ghosts Of Mississippi",track_id="0h7ror8cztsh6yugnlqjm2"} 1.0
+partybox_top_item_info{artist="The Marcus King Band",mode="spotify",rank="18",title="Goodbye Carolina",track_id="6lngqqeos6i2kxisbn24xc"} 1.0
+partybox_top_item_info{artist="Robert Earl Keen",mode="spotify",rank="19",title="Gringo Honeymoon",track_id="4zmv52fyookcsrrhqovtps"} 1.0
+partybox_top_item_info{artist="Trampled by Turtles",mode="spotify",rank="20",title="Midnight on the Interstate",track_id="4si6ia4b6l5j1n6k42wehc"} 1.0
+partybox_top_item_info{artist="Brent Cobb",mode="spotify",rank="21",title="Bar, Guitar, and a Honky Tonk Crowd",track_id="7djz3v8dputj7t1fw2knzv"} 1.0
+partybox_top_item_info{artist="The Steeldrivers",mode="spotify",rank="22",title="Bad For You",track_id="67otbqgd9segkylhxs5xbg"} 1.0
+partybox_top_item_info{artist="Drive-By Truckers",mode="spotify",rank="23",title="Perfect Timing",track_id="0kzco6yesnfgjm1sgh84ef"} 1.0
+partybox_top_item_info{artist="Whiskey Myers",mode="spotify",rank="24",title="Dogwood",track_id="6w0mhavldzn6idmdajfydr"} 1.0
+partybox_top_item_info{artist="Trampled by Turtles",mode="spotify",rank="25",title="Right Back Where We Started",track_id="7h8oas8wkjunyljsuc53gv"} 1.0
+# HELP partybox_uptime_seconds PartyBox process uptime in seconds.
+# TYPE partybox_uptime_seconds gauge
+partybox_uptime_seconds 949.0558483600616
+# HELP partybox_build_info Build metadata for PartyBox process.
+# TYPE partybox_build_info gauge
+partybox_build_info{git_sha="unknown",version="unknown"} 1.0

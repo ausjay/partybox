@@ -54,6 +54,8 @@ def init_db() -> None:
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               catalog_id INTEGER NOT NULL,
               note_text TEXT,
+              requested_by TEXT DEFAULT '',
+              request_device TEXT DEFAULT '',
               status TEXT NOT NULL DEFAULT 'queued',   -- queued|playing|done|skipped|canceled
               pos INTEGER NOT NULL DEFAULT 0,          -- ordering key
               created_ts INTEGER NOT NULL DEFAULT 0,
@@ -88,6 +90,7 @@ def init_db() -> None:
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               ts INTEGER NOT NULL,
               mode TEXT NOT NULL,
+              actor TEXT DEFAULT '',
               title TEXT DEFAULT '',
               artist TEXT DEFAULT '',
               album TEXT DEFAULT '',
@@ -101,19 +104,13 @@ def init_db() -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_play_history_mode_ts ON play_history(mode, ts)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_play_history_mode_provider ON play_history(mode, provider_id)")
 
-        # One-time compatibility backfill from older play_events storage.
-        conn.execute(
-            """
-            INSERT INTO play_history(ts, mode, title, artist, album, provider_id, uri, extra_json)
-            SELECT pe.ts, pe.mode, pe.title, pe.artist, '', pe.track_id, pe.uri, ''
-            FROM play_events pe
-            WHERE NOT EXISTS (SELECT 1 FROM play_history LIMIT 1)
-            """
-        )
-
         # Backfill / migrate older DBs safely
         if not _col_exists(conn, "queue", "status"):
             conn.execute("ALTER TABLE queue ADD COLUMN status TEXT NOT NULL DEFAULT 'queued'")
+        if not _col_exists(conn, "queue", "requested_by"):
+            conn.execute("ALTER TABLE queue ADD COLUMN requested_by TEXT DEFAULT ''")
+        if not _col_exists(conn, "queue", "request_device"):
+            conn.execute("ALTER TABLE queue ADD COLUMN request_device TEXT DEFAULT ''")
         if not _col_exists(conn, "queue", "pos"):
             conn.execute("ALTER TABLE queue ADD COLUMN pos INTEGER NOT NULL DEFAULT 0")
         if not _col_exists(conn, "queue", "created_ts"):
@@ -122,6 +119,18 @@ def init_db() -> None:
             conn.execute("ALTER TABLE queue ADD COLUMN started_ts INTEGER")
         if not _col_exists(conn, "queue", "ended_ts"):
             conn.execute("ALTER TABLE queue ADD COLUMN ended_ts INTEGER")
+        if not _col_exists(conn, "play_history", "actor"):
+            conn.execute("ALTER TABLE play_history ADD COLUMN actor TEXT DEFAULT ''")
+
+        # One-time compatibility backfill from older play_events storage.
+        conn.execute(
+            """
+            INSERT INTO play_history(ts, mode, actor, title, artist, album, provider_id, uri, extra_json)
+            SELECT pe.ts, pe.mode, pe.started_by, pe.title, pe.artist, '', pe.track_id, pe.uri, ''
+            FROM play_events pe
+            WHERE NOT EXISTS (SELECT 1 FROM play_history LIMIT 1)
+            """
+        )
 
         # Ensure settings defaults using the same transaction/connection.
         def _setting_get(key: str, default: Optional[str] = None) -> Optional[str]:
@@ -230,13 +239,18 @@ def _next_pos(conn: sqlite3.Connection) -> int:
     return int(r["m"]) + 1
 
 
-def enqueue(catalog_id: int, note_text: Optional[str] = None) -> int:
+def enqueue(
+    catalog_id: int,
+    note_text: Optional[str] = None,
+    requested_by: str = "",
+    request_device: str = "",
+) -> int:
     with _connect() as conn:
         ts = _now()
         pos = _next_pos(conn)
         cur = conn.execute(
-            "INSERT INTO queue(catalog_id, note_text, status, pos, created_ts) VALUES(?,?,?,?,?)",
-            (catalog_id, note_text, "queued", pos, ts),
+            "INSERT INTO queue(catalog_id, note_text, requested_by, request_device, status, pos, created_ts) VALUES(?,?,?,?,?,?,?)",
+            (catalog_id, note_text, (requested_by or "")[:120], (request_device or "")[:120], "queued", pos, ts),
         )
         conn.commit()
         return int(cur.lastrowid)
@@ -257,7 +271,7 @@ def list_queue(limit: int = 50) -> List[Dict[str, Any]]:
         rows = conn.execute(
             """
             SELECT
-              q.id, q.status, q.pos, q.note_text,
+              q.id, q.status, q.pos, q.note_text, q.requested_by, q.request_device,
               c.id AS catalog_id, c.title, c.youtube_id
             FROM queue q
             JOIN catalog c ON c.id = q.catalog_id
@@ -283,7 +297,7 @@ def get_queue_item(queue_id: int) -> Optional[Dict[str, Any]]:
         r = conn.execute(
             """
             SELECT
-              q.id, q.status, q.pos, q.note_text,
+              q.id, q.status, q.pos, q.note_text, q.requested_by, q.request_device,
               c.id AS catalog_id, c.title, c.youtube_id
             FROM queue q
             JOIN catalog c ON c.id = q.catalog_id
@@ -329,7 +343,7 @@ def get_now_playing() -> Optional[Dict[str, Any]]:
         r = conn.execute(
             """
             SELECT
-              q.id, q.status, q.pos, q.note_text,
+              q.id, q.status, q.pos, q.note_text, q.requested_by, q.request_device,
               c.title, c.youtube_id
             FROM queue q
             JOIN catalog c ON c.id = q.catalog_id
@@ -348,6 +362,7 @@ def peek_next() -> Optional[Dict[str, Any]]:
         r = conn.execute(
             """
             SELECT q.id, q.status, q.pos, q.note_text,
+                   q.requested_by, q.request_device,
                    c.title, c.youtube_id
             FROM queue q
             JOIN catalog c ON c.id=q.catalog_id
@@ -467,6 +482,7 @@ def add_play_event(
     add_play_history_event(
         ts=ts_val,
         mode=mode_val,
+        actor=started_by,
         title=title,
         artist=artist,
         album="",
@@ -497,6 +513,7 @@ def add_play_event(
 
 def add_play_history_event(
     mode: str,
+    actor: str = "",
     title: str = "",
     artist: str = "",
     album: str = "",
@@ -512,12 +529,13 @@ def add_play_history_event(
     with _connect() as conn:
         cur = conn.execute(
             """
-            INSERT INTO play_history(ts, mode, title, artist, album, provider_id, uri, extra_json)
-            VALUES(?,?,?,?,?,?,?,?)
+            INSERT INTO play_history(ts, mode, actor, title, artist, album, provider_id, uri, extra_json)
+            VALUES(?,?,?,?,?,?,?,?,?)
             """,
             (
                 ts_val,
                 mode_val[:24],
+                (actor or "")[:120],
                 (title or "")[:200],
                 (artist or "")[:200],
                 (album or "")[:200],
@@ -539,6 +557,7 @@ def list_play_history(limit: int = 25) -> List[Dict[str, Any]]:
               id,
               ts,
               mode,
+              actor,
               title,
               artist,
               album,

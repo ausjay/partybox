@@ -1,0 +1,868 @@
+{
+  "generated_at_epoch": 1772165869,
+  "metric_family_count": 46,
+  "metric_families": [
+    {
+      "name": "partybox_build_info",
+      "type": "gauge",
+      "help": "Build metadata for PartyBox process.",
+      "series_count": 1,
+      "labels": [
+        "git_sha",
+        "version"
+      ],
+      "label_values": {
+        "git_sha": [
+          "unknown"
+        ],
+        "version": [
+          "unknown"
+        ]
+      },
+      "sample_metrics": [
+        "partybox_build_info"
+      ]
+    },
+    {
+      "name": "partybox_db_ok",
+      "type": "gauge",
+      "help": "SQLite DB health for metrics/play-history operations (1=ok, 0=error).",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "partybox_db_ok"
+      ]
+    },
+    {
+      "name": "partybox_external_last_play_timestamp_seconds",
+      "type": "gauge",
+      "help": "Unix timestamp of last logged external play event by mode.",
+      "series_count": 2,
+      "labels": [
+        "mode"
+      ],
+      "label_values": {
+        "mode": [
+          "airplay",
+          "bluetooth"
+        ]
+      },
+      "sample_metrics": [
+        "partybox_external_last_play_timestamp_seconds"
+      ]
+    },
+    {
+      "name": "partybox_external_metadata_available",
+      "type": "gauge",
+      "help": "Whether metadata is currently available for external receiver mode.",
+      "series_count": 2,
+      "labels": [
+        "mode"
+      ],
+      "label_values": {
+        "mode": [
+          "airplay",
+          "bluetooth"
+        ]
+      },
+      "sample_metrics": [
+        "partybox_external_metadata_available"
+      ]
+    },
+    {
+      "name": "partybox_external_stream_active",
+      "type": "gauge",
+      "help": "Whether external receiver stream appears active by mode (airplay/bluetooth).",
+      "series_count": 2,
+      "labels": [
+        "mode"
+      ],
+      "label_values": {
+        "mode": [
+          "airplay",
+          "bluetooth"
+        ]
+      },
+      "sample_metrics": [
+        "partybox_external_stream_active"
+      ]
+    },
+    {
+      "name": "partybox_http_exceptions_total",
+      "type": "counter",
+      "help": "Total uncaught HTTP exceptions in PartyBox request handling.",
+      "series_count": 0,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": []
+    },
+    {
+      "name": "partybox_http_request_duration_seconds",
+      "type": "histogram",
+      "help": "HTTP request duration in seconds.",
+      "series_count": 204,
+      "labels": [
+        "le",
+        "method",
+        "route"
+      ],
+      "label_values": {
+        "le": [
+          "+Inf",
+          "0.005",
+          "0.01",
+          "0.025",
+          "0.05",
+          "0.075",
+          "0.1",
+          "0.25",
+          "0.5",
+          "0.75",
+          "1.0",
+          "10.0",
+          "2.5",
+          "5.0",
+          "7.5"
+        ],
+        "method": [
+          "get",
+          "head",
+          "post"
+        ],
+        "route": [
+          "/admin",
+          "/api/admin/health",
+          "/api/admin/media_mode_status",
+          "/api/history",
+          "/api/queue",
+          "/api/state",
+          "/api/tv/heartbeat",
+          "/api/tv/mark_done",
+          "/api/tv/status",
+          "/metrics",
+          "/tv",
+          "/u"
+        ]
+      },
+      "sample_metrics": [
+        "partybox_http_request_duration_seconds_bucket",
+        "partybox_http_request_duration_seconds_count",
+        "partybox_http_request_duration_seconds_sum"
+      ]
+    },
+    {
+      "name": "partybox_http_request_duration_seconds_created",
+      "type": "gauge",
+      "help": "HTTP request duration in seconds.",
+      "series_count": 12,
+      "labels": [
+        "method",
+        "route"
+      ],
+      "label_values": {
+        "method": [
+          "get",
+          "head",
+          "post"
+        ],
+        "route": [
+          "/admin",
+          "/api/admin/health",
+          "/api/admin/media_mode_status",
+          "/api/history",
+          "/api/queue",
+          "/api/state",
+          "/api/tv/heartbeat",
+          "/api/tv/mark_done",
+          "/api/tv/status",
+          "/metrics",
+          "/tv",
+          "/u"
+        ]
+      },
+      "sample_metrics": [
+        "partybox_http_request_duration_seconds_created"
+      ]
+    },
+    {
+      "name": "partybox_http_requests_created",
+      "type": "gauge",
+      "help": "Total HTTP requests served by PartyBox.",
+      "series_count": 12,
+      "labels": [
+        "method",
+        "route",
+        "status"
+      ],
+      "label_values": {
+        "method": [
+          "get",
+          "head",
+          "post"
+        ],
+        "route": [
+          "/admin",
+          "/api/admin/health",
+          "/api/admin/media_mode_status",
+          "/api/history",
+          "/api/queue",
+          "/api/state",
+          "/api/tv/heartbeat",
+          "/api/tv/mark_done",
+          "/api/tv/status",
+          "/metrics",
+          "/tv",
+          "/u"
+        ],
+        "status": [
+          "200"
+        ]
+      },
+      "sample_metrics": [
+        "partybox_http_requests_created"
+      ]
+    },
+    {
+      "name": "partybox_http_requests_total",
+      "type": "counter",
+      "help": "Total HTTP requests served by PartyBox.",
+      "series_count": 12,
+      "labels": [
+        "method",
+        "route",
+        "status"
+      ],
+      "label_values": {
+        "method": [
+          "get",
+          "head",
+          "post"
+        ],
+        "route": [
+          "/admin",
+          "/api/admin/health",
+          "/api/admin/media_mode_status",
+          "/api/history",
+          "/api/queue",
+          "/api/state",
+          "/api/tv/heartbeat",
+          "/api/tv/mark_done",
+          "/api/tv/status",
+          "/metrics",
+          "/tv",
+          "/u"
+        ],
+        "status": [
+          "200"
+        ]
+      },
+      "sample_metrics": [
+        "partybox_http_requests_total"
+      ]
+    },
+    {
+      "name": "partybox_last_error_timestamp_seconds",
+      "type": "gauge",
+      "help": "Unix timestamp of most recent application error event.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "partybox_last_error_timestamp_seconds"
+      ]
+    },
+    {
+      "name": "partybox_last_mode_change_timestamp_seconds",
+      "type": "gauge",
+      "help": "Unix timestamp for the last successful media mode change.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "partybox_last_mode_change_timestamp_seconds"
+      ]
+    },
+    {
+      "name": "partybox_last_queue_add_timestamp_seconds",
+      "type": "gauge",
+      "help": "Unix timestamp of most recent queue add operation.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "partybox_last_queue_add_timestamp_seconds"
+      ]
+    },
+    {
+      "name": "partybox_mode",
+      "type": "gauge",
+      "help": "Active PartyBox mode. Exactly one mode should be 1.",
+      "series_count": 6,
+      "labels": [
+        "mode"
+      ],
+      "label_values": {
+        "mode": [
+          "airplay",
+          "bluetooth",
+          "mute",
+          "partybox",
+          "spotify",
+          "tv"
+        ]
+      },
+      "sample_metrics": [
+        "partybox_mode"
+      ]
+    },
+    {
+      "name": "partybox_play_history_events_total",
+      "type": "counter",
+      "help": "Total play-history events persisted by mode.",
+      "series_count": 0,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": []
+    },
+    {
+      "name": "partybox_queue_add_total",
+      "type": "counter",
+      "help": "Total queue add operations.",
+      "series_count": 0,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": []
+    },
+    {
+      "name": "partybox_queue_depth",
+      "type": "gauge",
+      "help": "Current number of queued/playing items.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "partybox_queue_depth"
+      ]
+    },
+    {
+      "name": "partybox_queue_play_created",
+      "type": "gauge",
+      "help": "Total queue item play starts.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "partybox_queue_play_created"
+      ]
+    },
+    {
+      "name": "partybox_queue_play_total",
+      "type": "counter",
+      "help": "Total queue item play starts.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "partybox_queue_play_total"
+      ]
+    },
+    {
+      "name": "partybox_spotify_api_errors_total",
+      "type": "counter",
+      "help": "Spotify API error responses by status.",
+      "series_count": 0,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": []
+    },
+    {
+      "name": "partybox_spotify_api_requests_total",
+      "type": "counter",
+      "help": "Spotify API request count by endpoint and status.",
+      "series_count": 0,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": []
+    },
+    {
+      "name": "partybox_spotify_device_visible",
+      "type": "gauge",
+      "help": "Whether a Spotify playback device is visible in current state.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "partybox_spotify_device_visible"
+      ]
+    },
+    {
+      "name": "partybox_spotify_last_rate_limit_retry_after_seconds",
+      "type": "gauge",
+      "help": "Last seen Spotify retry-after (seconds) when rate limited.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "partybox_spotify_last_rate_limit_retry_after_seconds"
+      ]
+    },
+    {
+      "name": "partybox_spotify_last_success_timestamp_seconds",
+      "type": "gauge",
+      "help": "Unix timestamp of last successful Spotify state fetch.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "partybox_spotify_last_success_timestamp_seconds"
+      ]
+    },
+    {
+      "name": "partybox_spotify_ok",
+      "type": "gauge",
+      "help": "Spotify backend health from current cached/live state (1=ok, 0=not ok).",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "partybox_spotify_ok"
+      ]
+    },
+    {
+      "name": "partybox_spotify_rate_limit_created",
+      "type": "gauge",
+      "help": "Number of Spotify 429 responses seen.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "partybox_spotify_rate_limit_created"
+      ]
+    },
+    {
+      "name": "partybox_spotify_rate_limit_total",
+      "type": "counter",
+      "help": "Number of Spotify 429 responses seen.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "partybox_spotify_rate_limit_total"
+      ]
+    },
+    {
+      "name": "partybox_spotify_rate_limited_created",
+      "type": "gauge",
+      "help": "Number of Spotify 429 responses seen (legacy name).",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "partybox_spotify_rate_limited_created"
+      ]
+    },
+    {
+      "name": "partybox_spotify_rate_limited_total",
+      "type": "counter",
+      "help": "Number of Spotify 429 responses seen (legacy name).",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "partybox_spotify_rate_limited_total"
+      ]
+    },
+    {
+      "name": "partybox_top_item_info",
+      "type": "gauge",
+      "help": "Current top item metadata by mode/rank.",
+      "series_count": 81,
+      "labels": [
+        "artist",
+        "mode",
+        "rank",
+        "title",
+        "track_id"
+      ],
+      "label_values": {
+        "artist": [
+          "",
+          "Brent Cobb",
+          "Charlie Robison",
+          "Clay Street Unit",
+          "Drive-By Truckers",
+          "James McMurtry",
+          "Kaitlin Butts",
+          "Robert Earl Keen",
+          "The Marcus King Band",
+          "The Red Clay Strays",
+          "The Steeldrivers",
+          "Trampled by Turtles",
+          "Trout Steak Revival",
+          "Whiskey Myers",
+          "Zach Bryan"
+        ],
+        "mode": [
+          "partybox",
+          "spotify"
+        ],
+        "rank": [
+          "01",
+          "02",
+          "03",
+          "04",
+          "05",
+          "06",
+          "07",
+          "08",
+          "09",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "16",
+          "17",
+          "18",
+          "19",
+          "20"
+        ],
+        "title": [
+          "",
+          "Big City Blues",
+          "Charlie Robison - My Hometown (Video)",
+          "Copper Canteen",
+          "Engine Trouble",
+          "Gravity's Gone",
+          "Heart of Stone",
+          "How Lucky Am I",
+          "Life Is Good on the Open Road",
+          "Lonely Boy",
+          "Lyle Lovett:  Church",
+          "People Hatin'",
+          "Quittin' Time",
+          "RYAN BINGHAM - \"Nobody Knows My Trouble\" (Live in West Hollywood, CA) #JAMINTHEVAN",
+          "She's No Good",
+          "The Outskirts",
+          "The Price",
+          "The Toadies - Backslider",
+          "The Toadies - Tyler",
+          "When I Come Back Again"
+        ],
+        "track_id": [
+          "(none)",
+          "09n5oiitfoyyl5s4ztn9pe",
+          "1glzqflonwqij3hijdxmxo",
+          "1rihxz9g1xmfsxszfekmaq",
+          "2jg8qg7kdywkm9smycxz1i",
+          "2upni0lioo6trcttrrtvsx",
+          "3ilu5gmuqs73z4c2u43xoj",
+          "50emgupm363qirybe20fr3",
+          "54md82rohcsrlc2ns3xchq",
+          "5q5cew3fetzrqyiyzxir8l",
+          "5z8koliqhnzz2vnjyd3qp7",
+          "65djcr0by2s8w1mdl270yj",
+          "738oxpa234cxaqkh9bpha4",
+          "7dhnvfxljnwvllglr6lmlc",
+          "9zl27aiw9_i",
+          "ekbk7bpxba4",
+          "file:lonely_boy.mp4",
+          "pd656b8w9mk",
+          "wg1pytowl6c",
+          "zzi0zo2ts1y"
+        ]
+      },
+      "sample_metrics": [
+        "partybox_top_item_info"
+      ]
+    },
+    {
+      "name": "partybox_top_item_plays",
+      "type": "gauge",
+      "help": "Current top item play counts by mode/rank.",
+      "series_count": 81,
+      "labels": [
+        "mode",
+        "rank",
+        "track_id"
+      ],
+      "label_values": {
+        "mode": [
+          "partybox",
+          "spotify"
+        ],
+        "rank": [
+          "01",
+          "02",
+          "03",
+          "04",
+          "05",
+          "06",
+          "07",
+          "08",
+          "09",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "16",
+          "17",
+          "18",
+          "19",
+          "20"
+        ],
+        "track_id": [
+          "(none)",
+          "09n5oiitfoyyl5s4ztn9pe",
+          "1glzqflonwqij3hijdxmxo",
+          "1rihxz9g1xmfsxszfekmaq",
+          "2jg8qg7kdywkm9smycxz1i",
+          "2upni0lioo6trcttrrtvsx",
+          "3ilu5gmuqs73z4c2u43xoj",
+          "50emgupm363qirybe20fr3",
+          "54md82rohcsrlc2ns3xchq",
+          "5q5cew3fetzrqyiyzxir8l",
+          "5z8koliqhnzz2vnjyd3qp7",
+          "65djcr0by2s8w1mdl270yj",
+          "738oxpa234cxaqkh9bpha4",
+          "7dhnvfxljnwvllglr6lmlc",
+          "9zl27aiw9_i",
+          "ekbk7bpxba4",
+          "file:lonely_boy.mp4",
+          "pd656b8w9mk",
+          "wg1pytowl6c",
+          "zzi0zo2ts1y"
+        ]
+      },
+      "sample_metrics": [
+        "partybox_top_item_plays"
+      ]
+    },
+    {
+      "name": "partybox_tv_commands_created",
+      "type": "gauge",
+      "help": "TV command count.",
+      "series_count": 1,
+      "labels": [
+        "cmd"
+      ],
+      "label_values": {
+        "cmd": [
+          "mark_done"
+        ]
+      },
+      "sample_metrics": [
+        "partybox_tv_commands_created"
+      ]
+    },
+    {
+      "name": "partybox_tv_commands_total",
+      "type": "counter",
+      "help": "TV command count.",
+      "series_count": 1,
+      "labels": [
+        "cmd"
+      ],
+      "label_values": {
+        "cmd": [
+          "mark_done"
+        ]
+      },
+      "sample_metrics": [
+        "partybox_tv_commands_total"
+      ]
+    },
+    {
+      "name": "partybox_tv_errors_total",
+      "type": "counter",
+      "help": "TV error count.",
+      "series_count": 0,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": []
+    },
+    {
+      "name": "partybox_tv_ok",
+      "type": "gauge",
+      "help": "TV integration health (heartbeat/status based).",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "partybox_tv_ok"
+      ]
+    },
+    {
+      "name": "partybox_uptime_seconds",
+      "type": "gauge",
+      "help": "PartyBox process uptime in seconds.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "partybox_uptime_seconds"
+      ]
+    },
+    {
+      "name": "process_cpu_seconds_total",
+      "type": "counter",
+      "help": "Total user and system CPU time spent in seconds.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "process_cpu_seconds_total"
+      ]
+    },
+    {
+      "name": "process_max_fds",
+      "type": "gauge",
+      "help": "Maximum number of open file descriptors.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "process_max_fds"
+      ]
+    },
+    {
+      "name": "process_open_fds",
+      "type": "gauge",
+      "help": "Number of open file descriptors.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "process_open_fds"
+      ]
+    },
+    {
+      "name": "process_resident_memory_bytes",
+      "type": "gauge",
+      "help": "Resident memory size in bytes.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "process_resident_memory_bytes"
+      ]
+    },
+    {
+      "name": "process_start_time_seconds",
+      "type": "gauge",
+      "help": "Start time of the process since unix epoch in seconds.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "process_start_time_seconds"
+      ]
+    },
+    {
+      "name": "process_virtual_memory_bytes",
+      "type": "gauge",
+      "help": "Virtual memory size in bytes.",
+      "series_count": 1,
+      "labels": [],
+      "label_values": {},
+      "sample_metrics": [
+        "process_virtual_memory_bytes"
+      ]
+    },
+    {
+      "name": "python_gc_collections_total",
+      "type": "counter",
+      "help": "Number of times this generation was collected",
+      "series_count": 3,
+      "labels": [
+        "generation"
+      ],
+      "label_values": {
+        "generation": [
+          "0",
+          "1",
+          "2"
+        ]
+      },
+      "sample_metrics": [
+        "python_gc_collections_total"
+      ]
+    },
+    {
+      "name": "python_gc_objects_collected_total",
+      "type": "counter",
+      "help": "Objects collected during gc",
+      "series_count": 3,
+      "labels": [
+        "generation"
+      ],
+      "label_values": {
+        "generation": [
+          "0",
+          "1",
+          "2"
+        ]
+      },
+      "sample_metrics": [
+        "python_gc_objects_collected_total"
+      ]
+    },
+    {
+      "name": "python_gc_objects_uncollectable_total",
+      "type": "counter",
+      "help": "Uncollectable objects found during GC",
+      "series_count": 3,
+      "labels": [
+        "generation"
+      ],
+      "label_values": {
+        "generation": [
+          "0",
+          "1",
+          "2"
+        ]
+      },
+      "sample_metrics": [
+        "python_gc_objects_uncollectable_total"
+      ]
+    },
+    {
+      "name": "python_info",
+      "type": "gauge",
+      "help": "Python platform information",
+      "series_count": 1,
+      "labels": [
+        "implementation",
+        "major",
+        "minor",
+        "patchlevel",
+        "version"
+      ],
+      "label_values": {
+        "implementation": [
+          "CPython"
+        ],
+        "major": [
+          "3"
+        ],
+        "minor": [
+          "12"
+        ],
+        "patchlevel": [
+          "3"
+        ],
+        "version": [
+          "3.12.3"
+        ]
+      },
+      "sample_metrics": [
+        "python_info"
+      ]
+    }
+  ],
+  "source_url": "http://127.0.0.1:5000/metrics"
+}

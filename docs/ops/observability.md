@@ -84,3 +84,21 @@ scrape_configs:
 ## Security Note
 
 `/metrics` can reveal operational details. Keep PartyBox on a trusted LAN, or gate access via firewall/reverse proxy if needed.
+
+## Grafana Assets
+
+Grafana-ready assets live in `ops/grafana/`:
+
+- `partybox_observability_dashboard.json` (import into Grafana)
+- `metrics_snapshot.prom` (raw metrics dump)
+- `metrics_catalog.json` + `metrics_catalog.md` (metric inventory)
+
+Refresh those files any time with:
+
+```bash
+tools/export_metrics_catalog.py \
+  --url http://127.0.0.1:5000/metrics \
+  --out-prom ops/grafana/metrics_snapshot.prom \
+  --out-json ops/grafana/metrics_catalog.json \
+  --out-md ops/grafana/metrics_catalog.md
+```

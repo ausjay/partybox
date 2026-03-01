@@ -278,7 +278,7 @@
       <div class="panel panel-history" style="grid-column: span 12;">
         <div class="panelHeader">
           <div class="kicker">Last 25 Plays</div>
-          <div class="hint">Time, mode, and best-effort metadata across PartyBox, Spotify, AirPlay, and Bluetooth</div>
+          <div class="hint">Time, mode, device/user, and best-effort metadata across PartyBox, Spotify, AirPlay, and Bluetooth</div>
         </div>
         <div class="panelInner">
           <div id="history_empty_card" class="card" style="display:none;">
@@ -291,6 +291,7 @@
                 <tr style="text-align:left; color:rgba(200,220,240,0.9); border-bottom:1px solid rgba(255,255,255,0.12);">
                   <th style="padding:8px 6px;">Time</th>
                   <th style="padding:8px 6px;">Mode</th>
+                  <th style="padding:8px 6px;">Device/User</th>
                   <th style="padding:8px 6px;">Artist</th>
                   <th style="padding:8px 6px;">Title</th>
                   <th style="padding:8px 6px;">Source</th>
@@ -883,11 +884,13 @@
       const mode = (it.mode || "unknown").toString().trim().toLowerCase();
       const title = (it.title || "").toString().trim() || "Unknown";
       const artist = (it.artist || "").toString().trim() || "Unknown";
+      const deviceUser = (it.device_user || it.actor || "").toString().trim() || "Unknown";
       const source = (it.provider_id || it.uri || "").toString().trim() || "—";
 
       const cols = [
         fmtLocalTs(it.ts),
         mode,
+        deviceUser,
         artist,
         title,
         source,

@@ -786,6 +786,53 @@ def create_app() -> Flask:
         ).strip()
         return hint or "Connect to PartyBox on Spotify."
 
+    def _client_ip() -> str:
+        xff = (request.headers.get("X-Forwarded-For", "") or "").strip()
+        if xff:
+            first = xff.split(",")[0].strip()
+            if first:
+                return first[:64]
+        return str(request.remote_addr or "").strip()[:64]
+
+    def _device_label_from_ua(user_agent: str) -> str:
+        ua = (user_agent or "").lower()
+        if not ua:
+            return "Unknown device"
+        if "iphone" in ua:
+            return "iPhone"
+        if "ipad" in ua:
+            return "iPad"
+        if "android" in ua:
+            return "Android"
+        if "windows" in ua:
+            return "Windows"
+        if "macintosh" in ua or "mac os x" in ua:
+            return "Mac"
+        if "linux" in ua:
+            return "Linux"
+        return "Unknown device"
+
+    def _request_actor() -> Tuple[str, str]:
+        ip = _client_ip()
+        device = _device_label_from_ua(request.headers.get("User-Agent", ""))
+        if device and ip:
+            return f"{device} ({ip})", device
+        if device:
+            return device, device
+        return ip, ""
+
+    def _spotify_actor_label(payload: Dict[str, Any]) -> str:
+        p = payload if isinstance(payload, dict) else {}
+        account = p.get("account") if isinstance(p.get("account"), dict) else {}
+        device = p.get("device") if isinstance(p.get("device"), dict) else {}
+        account_name = str(account.get("display_name") or "").strip()
+        device_name = str(device.get("name") or "").strip()
+        if account_name and device_name:
+            if account_name == device_name:
+                return account_name
+            return f"{account_name} via {device_name}"
+        return account_name or device_name or "Spotify"
+
     def _invalidate_top_cache(mode: Optional[str] = None) -> None:
         if mode:
             key = (mode or "").strip().lower()
@@ -875,6 +922,7 @@ def create_app() -> Flask:
 
     def _record_play_history(
         mode: str,
+        actor: str = "",
         title: str = "",
         artist: str = "",
         album: str = "",
@@ -892,6 +940,7 @@ def create_app() -> Flask:
         event_ts = int(ts if ts is not None else time.time())
         DB.add_play_history_event(
             mode=mode,
+            actor=actor,
             title=title,
             artist=artist,
             album=album,
@@ -937,6 +986,13 @@ def create_app() -> Flask:
         device_name = str(snap.get("device_name") or "").strip()
         device_id = str(snap.get("device_id") or "").strip()
         note = str(snap.get("note") or "").strip()
+        actor = ""
+        if m == "bluetooth":
+            actor = device_name or device_id
+        elif m == "airplay":
+            actor = device_name if device_name and device_name.lower() not in ("airplay", "partybox") else ""
+            if not actor:
+                actor = device_id
 
         if provider_id:
             event_key = provider_id
@@ -951,6 +1007,7 @@ def create_app() -> Flask:
         if (event_key != str(last.get("key") or "")) or (not was_active):
             _record_play_history(
                 mode=m,
+                actor=actor,
                 title=title or "Unknown",
                 artist=artist,
                 album=album,
@@ -1026,7 +1083,7 @@ def create_app() -> Flask:
             artist="",
             uri=uri,
             duration_ms=0,
-            started_by=(request.remote_addr or ""),
+            started_by=(str(row.get("requested_by") or "").strip() or str(row.get("request_device") or "").strip()),
         )
         METRICS.inc_play_history_event("partybox")
         last_partybox_queue_id["value"] = queue_id
@@ -1052,6 +1109,7 @@ def create_app() -> Flask:
         artist_text = ", ".join(str(a) for a in artists if str(a).strip())
         uri = str(track.get("uri") or f"spotify:track:{track_id}")
         duration_ms = int(track.get("duration_ms") or 0)
+        actor = _spotify_actor_label(payload)
         DB.add_play_event(
             mode="spotify",
             track_id=track_id,
@@ -1059,7 +1117,7 @@ def create_app() -> Flask:
             artist=artist_text,
             uri=uri,
             duration_ms=duration_ms,
-            started_by="spotify",
+            started_by=actor,
         )
         METRICS.inc_play_history_event("spotify")
         last_spotify_track_id["value"] = track_id
@@ -1552,6 +1610,20 @@ def create_app() -> Flask:
             limit = 25
         limit = max(1, min(100, limit))
         rows = DB.list_play_history(limit=limit)
+        for row in rows:
+            actor = str(row.get("actor") or "").strip()
+            if not actor:
+                try:
+                    extra = json.loads(str(row.get("extra_json") or "") or "{}")
+                except Exception:
+                    extra = {}
+                if isinstance(extra, dict):
+                    mode = str(row.get("mode") or "").strip().lower()
+                    if mode == "bluetooth":
+                        actor = str(extra.get("device_name") or extra.get("device_id") or "").strip()
+                    elif mode == "airplay":
+                        actor = str(extra.get("device_name") or extra.get("device_id") or "").strip()
+            row["device_user"] = actor or "Unknown"
         return jsonify({"ok": True, "items": rows, "limit": limit, "ts": int(time.time())})
 
     @app.post("/api/tv/heartbeat")
@@ -1634,7 +1706,13 @@ def create_app() -> Flask:
             _record_last_error()
             return jsonify({"ok": False, "error": "bad catalog_id"}), 400
 
-        qid = DB.enqueue(catalog_id, note_text=note_text[:120] if note_text else None)
+        requester, request_device = _request_actor()
+        qid = DB.enqueue(
+            catalog_id,
+            note_text=note_text[:120] if note_text else None,
+            requested_by=requester,
+            request_device=request_device,
+        )
         METRICS.inc_queue_add("user_request")
         METRICS.set_last_queue_add_timestamp(time.time())
         METRICS.set_db_ok(True)

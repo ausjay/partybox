@@ -28,9 +28,14 @@ Result: guests still choose what they want to hear and see, but inside rules tha
 - Serves an admin panel (`/admin?key=...`)
 - Supports curated request mode (guest picks from approved catalog)
 - Supports Spotify mode (single-operator control)
+- Supports AirPlay receiver mode with best-effort now-playing metadata
+- Supports Bluetooth receiver mode with best-effort AVRCP metadata
 - Manages queue/catalog state in SQLite
 - Supports local files and YouTube-backed entries
+- Tracks unified play history across PartyBox, Spotify, AirPlay, and Bluetooth
+- Shows recent play history in Admin, including mode and device/user attribution
 - Exposes admin health APIs and an ops health-check script
+- Exposes Prometheus metrics (`/metrics`) plus liveness/readiness (`/healthz`, `/readyz`)
 - Runs as long-lived appliance services under systemd
 
 ## Runtime Architecture
@@ -63,8 +68,13 @@ No HTTPS is required in current deployment.
 - Deployment and nginx contract: `docs/DEPLOYMENT.md`
 - Appliance build/install (Ubuntu/desktop/services): `docs/INSTALL_APPLIANCE.md`
 - Audio mode switching (PartyBox/Spotify/AirPlay/Bluetooth/TV/Mute): `docs/audio_modes.md`
+- Metrics, top-tracks strategy, and Grafana query notes: `docs/metrics.md`
+- Media-mode observability and metadata behavior: `docs/observability_and_media_modes.md`
+- Ops observability endpoints + scrape config: `docs/ops/observability.md`
 - Quick install/run notes: `INSTALL.md`
 - UI styling notes: `docs/design-system.md`
+
+Grafana dashboard assets and metric dumps live in `ops/grafana/`.
 
 ## Health Check
 
