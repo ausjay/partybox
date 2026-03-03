@@ -29,6 +29,7 @@ TV_URL="${PARTYBOX_TV_URL:-http://127.0.0.1:5000/tv}"
 # Snap Chromium cannot write many hidden paths under $HOME; default to a visible dir.
 KIOSK_PROFILE_DIR="${PARTYBOX_KIOSK_PROFILE_DIR:-$HOME/partybox-kiosk-profile}"
 DISABLE_DESKTOP_NOTIFICATIONS="${PARTYBOX_KIOSK_DISABLE_DESKTOP_NOTIFICATIONS:-1}"
+LOCKDOWN_DESKTOP="${PARTYBOX_KIOSK_LOCKDOWN_DESKTOP:-1}"
 
 for _ in $(seq 1 60); do
   if curl -fsS "$TV_URL" >/dev/null 2>&1; then
@@ -58,6 +59,20 @@ if [[ "$DISABLE_DESKTOP_NOTIFICATIONS" == "1" ]]; then
     xfconf-query -c xfce4-notifyd -p /do-not-disturb -n -t bool -s true >/dev/null 2>&1 || true
     xfconf-query -c xfce4-notifyd -p /log-level -n -t int -s 0 >/dev/null 2>&1 || true
   fi
+fi
+
+# Harden XFCE session for appliance mode so desktop/settings popups do not steal focus.
+if [[ "$LOCKDOWN_DESKTOP" == "1" ]]; then
+  if command -v xfconf-query >/dev/null 2>&1; then
+    # Disable monitor hotplug notifications/dialogs.
+    xfconf-query -c displays -p /Notify -n -t bool -s false >/dev/null 2>&1 || true
+    # Keep output profiles enabled without prompting.
+    xfconf-query -c displays -p /AutoEnableProfiles -n -t bool -s true >/dev/null 2>&1 || true
+    # Hide desktop icons and reduce visual desktop surface.
+    xfconf-query -c xfce4-desktop -p /desktop-icons/style -n -t int -s 0 >/dev/null 2>&1 || true
+  fi
+  # Best-effort: close XFCE settings windows that may appear after display events.
+  pkill -f "xfce4-display-settings|xfce4-settings-manager" >/dev/null 2>&1 || true
 fi
 
 CHROME_FLAGS=(

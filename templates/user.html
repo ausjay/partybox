@@ -36,9 +36,9 @@
       </div>
 
       <!-- Banners -->
-      <div id="spotify_banner" class="pb-banner warn" style="display:none; margin: 12px 0;">
-        <div class="title">Spotify Mode</div>
-        <div class="sub">Video requests are disabled while Spotify is active.</div>
+      <div id="mode_lock_banner" class="pb-banner warn" style="display:none; margin: 12px 0;">
+        <div class="title" id="mode_lock_banner_title">Requests Disabled</div>
+        <div class="sub" id="mode_lock_banner_sub">Video requests are disabled while this mode is active.</div>
       </div>
 
       <div class="grid user-grid" style="margin-top: 12px;">
@@ -156,7 +156,7 @@
     function isDisabledForRequests() {
       if (!STATE) return false;
       if (STATE.locked) return true;
-      if (currentMediaMode() === "spotify") return true;
+      if (currentMediaMode() !== "partybox") return true;
       return false;
     }
 
@@ -215,8 +215,10 @@
       // Keep paused informational only: allow queueing while paused.
       if (!STATE) return;
 
-      if (currentMediaMode() === "spotify") {
-        showToast("Spotify Mode — requests disabled", "warn");
+      const mediaMode = currentMediaMode();
+      if (mediaMode !== "partybox") {
+        const modeLabel = mediaMode.charAt(0).toUpperCase() + mediaMode.slice(1);
+        showToast(`${modeLabel} Mode — requests disabled`, "warn");
         return;
       }
       if (STATE.locked) {
@@ -244,7 +246,29 @@
 
     function updateBanners() {
       if (!STATE) return;
-      el("spotify_banner").style.display = (currentMediaMode() === "spotify") ? "block" : "none";
+      const mediaMode = currentMediaMode();
+      const banner = el("mode_lock_banner");
+      const title = el("mode_lock_banner_title");
+      const sub = el("mode_lock_banner_sub");
+      const nonPartybox = mediaMode !== "partybox";
+      banner.style.display = nonPartybox ? "block" : "none";
+      if (!nonPartybox) return;
+
+      const modePretty = mediaMode.charAt(0).toUpperCase() + mediaMode.slice(1);
+      title.textContent = `${modePretty} Mode`;
+      if (mediaMode === "spotify") {
+        sub.textContent = "Video requests are disabled while Spotify is active.";
+      } else if (mediaMode === "tv") {
+        sub.textContent = "Video requests are disabled while TV mode is active.";
+      } else if (mediaMode === "airplay") {
+        sub.textContent = "Video requests are disabled while AirPlay mode is active.";
+      } else if (mediaMode === "bluetooth") {
+        sub.textContent = "Video requests are disabled while Bluetooth mode is active.";
+      } else if (mediaMode === "mute") {
+        sub.textContent = "Video requests are disabled while Mute mode is active.";
+      } else {
+        sub.textContent = "Video requests are disabled while this mode is active.";
+      }
     }
 
     function updateTopPills() {

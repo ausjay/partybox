@@ -54,7 +54,7 @@
   <div id="tv_qr_idle" class="tvQr tvQrIdle hidden" aria-hidden="true">
     <div class="tvQrTitle">Scan To Pick The Next Video</div>
     <div id="tv_qr_idle_code" class="tvQrCode"></div>
-    <div class="tvQrSub" id="tv_qr_idle_sub">Join the same Wi-Fi, then open /user on your phone</div>
+    <div class="tvQrSub" id="tv_qr_idle_sub">Join the WiFi, then open partybox.local/user or scan this QR code.</div>
   </div>
 
   <div id="paused_overlay" class="paused-overlay" aria-hidden="true"></div>
@@ -77,8 +77,7 @@
   <script>
     let STATE = null;
     let QR_READY = false;
-    const CANONICAL_JOIN_HOST = "partybox.local";
-    const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+    const FORCED_QR_JOIN_URL = {{ (qr_join_url or "http://partybox.local/user") | tojson }};
     let SPOTIFY_PROGRESS = {
       active: false,
       trackKey: "",
@@ -91,9 +90,7 @@
     const el = (id) => document.getElementById(id);
 
     function getJoinUrl() {
-      const host = (window.location.hostname || "").toLowerCase();
-      const joinHost = LOOPBACK_HOSTS.has(host) ? CANONICAL_JOIN_HOST : (window.location.host || CANONICAL_JOIN_HOST);
-      return `http://${joinHost}/user`;
+      return FORCED_QR_JOIN_URL;
     }
 
     function ensureQr() {
@@ -102,7 +99,7 @@
 
       const joinUrl = getJoinUrl();
       const shortJoin = joinUrl.replace(/^https?:\/\//, "");
-      el("tv_qr_idle_sub").textContent = `Join the same Wi-Fi, then open ${shortJoin}`;
+      el("tv_qr_idle_sub").textContent = `Join the WiFi, then open ${shortJoin} or scan this QR code.`;
 
       new window.QRCode(el("tv_qr_idle_code"), {
         text: joinUrl,

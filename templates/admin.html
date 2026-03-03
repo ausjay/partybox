@@ -757,6 +757,26 @@
       return;
     }
 
+    if (mediaMode === "tv") {
+      titleEl.textContent = "TV mode active";
+      subEl.textContent = "PartyBox queue playback is paused while TV mode is active.";
+      kvEl.style.display = "grid";
+      kvPlayback.textContent = "TV Active";
+      kvRequests.textContent = "Locked";
+      kvAv.textContent = "TV";
+      return;
+    }
+
+    if (mediaMode === "mute") {
+      titleEl.textContent = "Mute mode active";
+      subEl.textContent = "PartyBox output is muted and queue playback is paused.";
+      kvEl.style.display = "grid";
+      kvPlayback.textContent = "Muted";
+      kvRequests.textContent = "Locked";
+      kvAv.textContent = "Mute";
+      return;
+    }
+
     if (!now) {
       titleEl.textContent = "Nothing playing / queued";
       subEl.textContent = "Queue item will appear here when playback starts.";

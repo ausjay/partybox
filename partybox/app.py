@@ -40,6 +40,29 @@ def _media_dir() -> str:
     return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "media"))
 
 
+def _tv_qr_join_url() -> str:
+    """
+    Build the TV QR destination URL and force HTTP to avoid mobile TLS warning loops.
+    Priority:
+      1) PARTYBOX_QR_JOIN_HOST (host[:port] or full URL)
+      2) request host (with loopback mapped to partybox.local)
+    """
+    raw_host = (os.getenv("PARTYBOX_QR_JOIN_HOST", "") or "").strip()
+    if raw_host:
+        parsed = urlparse(raw_host if "://" in raw_host else f"http://{raw_host}")
+        host = (parsed.netloc or parsed.path or "").strip()
+    else:
+        host = (request.host or "").strip()
+        host_lower = host.lower()
+        if host_lower.startswith("127.0.0.1") or host_lower.startswith("localhost") or host_lower.startswith("[::1]"):
+            host = "partybox.local"
+
+    host = host.strip().strip("/")
+    if not host:
+        host = "partybox.local"
+    return f"http://{host}/user"
+
+
 def _admin_or_403() -> str:
     admin_key = DB.get_setting("admin_key", "JBOX")
     key = request.args.get("key", "")
@@ -473,21 +496,28 @@ def _http_status_no_redirect(
 
 def _nginx_http_check() -> Dict[str, Any]:
     admin_key = DB.get_setting("admin_key", "JBOX")
+    health_host = (os.getenv("PARTYBOX_HEALTH_HOST", "partybox.local") or "partybox.local").strip() or "partybox.local"
+    allow_https_redirect = (os.getenv("PARTYBOX_HEALTH_ALLOW_HTTP_TO_HTTPS", "1") or "1").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
     endpoint_specs = {
         "http_root_redirect": {
-            "url": "http://partybox.local/",
+            "url": f"http://{health_host}/",
             "expected": (302,),
             "location_prefix": "/user",
         },
         "http_user_redirect": {
-            "url": "http://partybox.local/user",
+            "url": f"http://{health_host}/user",
             "expected": (302,),
             "location_prefix": "/u",
         },
-        "http_tv": {"url": "http://partybox.local/tv", "expected": (200,)},
-        "http_u": {"url": "http://partybox.local/u", "expected": (200,)},
+        "http_tv": {"url": f"http://{health_host}/tv", "expected": (200,)},
+        "http_u": {"url": f"http://{health_host}/u", "expected": (200,)},
         "http_admin": {
-            "url": f"http://partybox.local/admin?key={urllib.parse.quote(admin_key)}",
+            "url": f"http://{health_host}/admin?key={urllib.parse.quote(admin_key)}",
             "expected": (200,),
         },
     }
@@ -502,10 +532,23 @@ def _nginx_http_check() -> Dict[str, Any]:
         location_prefix = str(spec.get("location_prefix") or "")
         status, err, location = _http_status_no_redirect(url, insecure_tls=insecure)
         ok = status in expected
+        parsed_location = urllib.parse.urlparse(location or "")
+        location_path = str(parsed_location.path or "")
         if ok and location_prefix:
-            parsed_location = urllib.parse.urlparse(location or "")
-            location_path = str(parsed_location.path or "")
             ok = location.startswith(location_prefix) or location_path.startswith(location_prefix)
+
+        # Accept HTTP->HTTPS redirects as healthy when nginx is configured to force TLS.
+        # This keeps checks green when route behavior moved from direct 200 to 302 https://...
+        if (not ok) and allow_https_redirect and status in (301, 302, 307, 308) and location:
+            target_scheme = str(parsed_location.scheme or "").lower()
+            target_host = str(parsed_location.netloc or "").split(":", 1)[0].lower()
+            source_path = str(urllib.parse.urlparse(url).path or "/")
+            same_host_https = target_scheme == "https" and target_host == health_host.lower()
+            same_path = location_path == source_path
+            prefix_match = bool(location_prefix and location_path.startswith(location_prefix))
+            if same_host_https and (same_path or prefix_match):
+                ok = True
+
         if not ok:
             all_ok = False
         result: Dict[str, Any] = {
@@ -560,8 +603,22 @@ def _build_admin_health() -> Tuple[int, Dict[str, Any]]:
     else:
         av_mode = "spotify" if media_mode == "spotify" else "partybox"
     service_checks: Dict[str, Any] = {}
+
+    def _expected_service_user(unit: str) -> Optional[str]:
+        env_key = "PARTYBOX_HEALTH_EXPECTED_USER_" + unit.upper().replace(".", "_").replace("-", "_")
+        override = (os.getenv(env_key, "") or "").strip()
+        if override:
+            return override
+        if unit == "partybox-airplay.service":
+            return "shairport-sync"
+        if unit == "shairport-sync.service":
+            return "shairport-sync"
+        if unit.startswith("partybox"):
+            return "partybox"
+        return None
+
     for unit in required_services:
-        expected_user = "partybox" if unit.startswith("partybox") else None
+        expected_user = _expected_service_user(unit)
         c = _service_check(unit, expected_user=expected_user)
         service_checks[unit] = c
 
@@ -1426,14 +1483,16 @@ def create_app() -> Flask:
 
     @app.get("/tv")
     def tv():
-        return render_template("tv.html")
+        return render_template("tv.html", qr_join_url=_tv_qr_join_url())
 
     @app.get("/u")
     def user():
         items = DB.list_catalog(enabled_only=True)
         queue = DB.list_queue(limit=50)
-        locked = (DB.get_setting("requests_locked", "0") or "0").strip().lower() in ("1", "true", "yes", "on")
         media_mode = _current_media_mode()
+        locked = (DB.get_setting("requests_locked", "0") or "0").strip().lower() in ("1", "true", "yes", "on")
+        if media_mode != "partybox":
+            locked = True
         av_mode = "spotify" if media_mode == "spotify" else "partybox"
         return render_template("user.html", items=items, locked=locked, queue=queue, av_mode=av_mode, media_mode=media_mode)
 
@@ -1492,10 +1551,12 @@ def create_app() -> Flask:
     # ---------- APIs ----------
     @app.get("/api/state")
     def api_state():
+        media_mode = _current_media_mode()
         locked = _bool_setting("requests_locked", "0")
+        if media_mode != "partybox":
+            locked = True
         paused = _bool_setting("tv_paused", "0")
         muted = _bool_setting("tv_muted", "0")
-        media_mode = _current_media_mode()
         av_mode = "spotify" if media_mode == "spotify" else "partybox"
         tv_qr_enabled = _bool_setting("tv_qr_enabled", "1")
         key = (request.args.get("key", "") or "").strip()
@@ -1868,6 +1929,8 @@ def create_app() -> Flask:
             media_mode = _current_media_mode()
             av_mode = "spotify" if media_mode == "spotify" else "partybox"
             locked = _bool_setting("requests_locked", "0")
+            if media_mode != "partybox":
+                locked = True
             paused = _bool_setting("tv_paused", "0")
             muted = _bool_setting("tv_muted", "0")
             tv_qr_enabled = _bool_setting("tv_qr_enabled", "1")

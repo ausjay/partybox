@@ -91,6 +91,8 @@ Install desktop autostart for the appliance user:
 
 By default this also enables XFCE "Do Not Disturb" at kiosk launch to suppress desktop notification popups (including Chromium update prompts).
 Use `PARTYBOX_KIOSK_DISABLE_DESKTOP_NOTIFICATIONS=0` when running the installer to opt out.
+By default it also applies XFCE kiosk hardening (`PARTYBOX_KIOSK_LOCKDOWN_DESKTOP=1`) to suppress display/settings dialogs on hotplug events.
+Use `PARTYBOX_KIOSK_LOCKDOWN_DESKTOP=0` to opt out.
 
 This creates:
 

@@ -359,6 +359,12 @@ To keep desktop notifications enabled, run with:
 PARTYBOX_KIOSK_DISABLE_DESKTOP_NOTIFICATIONS=0 ./tools/install_kiosk_autostart.sh partybox
 ```
 
+The launcher also applies XFCE kiosk hardening by default to suppress display/settings dialogs that can appear on HDMI hotplug:
+
+```bash
+PARTYBOX_KIOSK_LOCKDOWN_DESKTOP=0 ./tools/install_kiosk_autostart.sh partybox
+```
+
 Verify:
 
 ```bash
