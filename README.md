@@ -235,3 +235,14 @@ sudo nginx -t && sudo systemctl reload nginx
 Built as a hobby.
 
 Engineered like it might need to survive a venue someday.
+
+## Screenshots
+
+### TV Mode
+![TV Mode](data/images/screenshot-tv.png)
+
+### Guest Mode
+![Guest Mode](data/images/screenshot-user.png)
+
+### Admin Mode
+![Admin Mode](data/images/screenshot-admin.png)
